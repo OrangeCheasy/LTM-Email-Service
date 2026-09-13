@@ -25,9 +25,8 @@ a:focus-visible { outline-color: rgba(182, 162, 201, .8); }
 
 .desktop-sidebar { background: #191d27; }
 .brand-row { align-items: center; }
-.brand-copy { min-width: 0; display: flex; flex-direction: column; justify-content: center; }
-.brand-copy strong { color: var(--text); white-space: nowrap; line-height: 1.1; }
-.brand-copy span { color: #918b99; }
+.brand-copy { min-width: 0; height: 38px; display: flex; align-items: center; }
+.brand-title { display: block; margin: 0; color: var(--text); font-size: 15px; font-weight: 750; line-height: 1; white-space: nowrap; }
 .brand-mark { background: #b6a2c9; color: #202531; box-shadow: 0 4px 16px rgba(8,9,14,.34); }
 .primary-compose { border: 1px solid #b6a2c9; background: #b6a2c9; color: #202531; box-shadow: 0 5px 18px rgba(8,9,14,.28); }
 .primary-compose:hover { background: #c5b4d5; border-color: #c5b4d5; }

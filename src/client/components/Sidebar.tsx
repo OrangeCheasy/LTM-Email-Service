@@ -32,7 +32,6 @@ export function Sidebar({ folders, activeFolder, unreadCount, health, notificati
         <div className="brand-mark">LM</div>
         <div className="brand-copy">
           <strong className="brand-title">LTM Mails</strong>
-          <span>contact@liamthemo.com</span>
         </div>
       </div>
 
