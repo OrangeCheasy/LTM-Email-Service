@@ -290,9 +290,12 @@ export function App() {
           loading={loading}
           search={search}
           unreadCount={unreadCount}
+          notificationState={notificationState}
+          notificationsDisabled={notificationsDisabled}
           onSearchChange={setSearch}
           onRefresh={() => void loadMessages()}
           onOpenMessage={(id) => void openMessage(id)}
+          onToggleNotifications={() => void toggleNotifications()}
         />
         <MessageReader
           message={selected}
