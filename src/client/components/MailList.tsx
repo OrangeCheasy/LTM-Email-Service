@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Folder, MessageListItem, NotificationState } from "../mailTypes";
 import { formatDate, senderInitial, senderLabel } from "../mailUtils";
 import { Icon } from "./Icon";
+import { ProfileModal } from "./ProfileModal";
 import { TopBar } from "./TopBar";
 
 type MailListProps = {
@@ -14,12 +15,10 @@ type MailListProps = {
   unreadCount: number;
   notificationState: NotificationState;
   notificationsDisabled: boolean;
-  profilePhotoUrl: string | null;
   onSearchChange: (value: string) => void;
   onRefresh: () => void;
   onOpenMessage: (id: string) => void;
   onToggleNotifications: () => void;
-  onOpenProfile: () => void;
 };
 
 type ListFilter = "all" | "unread" | "starred";
@@ -46,14 +45,31 @@ export function MailList({
   unreadCount,
   notificationState,
   notificationsDisabled,
-  profilePhotoUrl,
   onSearchChange,
   onRefresh,
   onOpenMessage,
   onToggleNotifications,
-  onOpenProfile,
 }: MailListProps) {
   const [listFilter, setListFilter] = useState<ListFilter>("all");
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/profile", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return response.json() as Promise<{ hasPhoto: boolean; version: string | null }>;
+      })
+      .then((profile) => {
+        if (!cancelled && profile?.hasPhoto) {
+          setProfilePhotoUrl(`/api/profile/photo?v=${encodeURIComponent(profile.version ?? "1")}`);
+        }
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
+
   const filtersEnabled = folder !== "drafts";
   const threadedMessages = useMemo(() => {
     if (folder === "drafts") return messages;
@@ -87,7 +103,7 @@ export function MailList({
         onSearchChange={onSearchChange}
         onSearch={onRefresh}
         onToggleNotifications={onToggleNotifications}
-        onOpenProfile={onOpenProfile}
+        onOpenProfile={() => setProfileOpen(true)}
       />
 
       <header className="mail-list-header">
@@ -96,7 +112,7 @@ export function MailList({
           <h1>{folderLabel}</h1>
         </div>
         <div className="mail-list-header-actions">
-          <button className="icon-button mobile-profile-button" type="button" aria-label="Open profile settings" onClick={onOpenProfile}>
+          <button className="icon-button mobile-profile-button" type="button" aria-label="Open profile settings" onClick={() => setProfileOpen(true)}>
             <span className="mobile-profile-avatar">{profilePhotoUrl ? <img src={profilePhotoUrl} alt="" /> : "LM"}</span>
           </button>
           <button
@@ -162,6 +178,8 @@ export function MailList({
           </button>
         ))}
       </div>
+
+      <ProfileModal open={profileOpen} photoUrl={profilePhotoUrl} onClose={() => setProfileOpen(false)} onPhotoChange={setProfilePhotoUrl} />
     </section>
   );
 }
