@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import type { MessageDetail } from "../mailTypes";
 import { formatBytes, formatFullDate, senderLabel } from "../mailUtils";
 import { AttachmentPreview } from "./AttachmentPreview";
@@ -39,7 +39,7 @@ function messageAvatarLabel(message: MessageDetail): string {
   return message.direction === "outbound" ? "LM" : inboundAvatarInitials(message);
 }
 
-function inboundAvatarStyle(message: MessageDetail): React.CSSProperties | undefined {
+function inboundAvatarStyle(message: MessageDetail): CSSProperties | undefined {
   if (message.direction !== "inbound") return undefined;
   const key = (message.fromAddress || message.fromName || "?").toLowerCase();
   let hash = 0;
