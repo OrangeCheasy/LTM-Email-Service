@@ -39,4 +39,6 @@ interface Env {
   EMAIL: EmailServiceBinding;
   PRIMARY_ADDRESS: string;
   FORWARD_TO: string;
+  VAPID_PUBLIC_KEY?: string;
+  VAPID_PRIVATE_KEY?: string;
 }
