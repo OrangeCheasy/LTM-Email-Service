@@ -1,0 +1,38 @@
+.reader-avatar.reader-avatar-fallback {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(145deg, #3a2b22, #261e19) !important;
+  border: 1px solid rgba(255, 140, 63, .18);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .025);
+  color: #ffc18f !important;
+  font-size: 0 !important;
+  line-height: 1 !important;
+}
+
+.reader-avatar .reader-avatar-initials {
+  width: 100%;
+  height: 100%;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  color: inherit !important;
+  font-size: 11px !important;
+  font-weight: 820 !important;
+  line-height: 1 !important;
+  letter-spacing: .035em;
+  text-align: center;
+  text-transform: uppercase;
+  transform: translateY(.25px);
+}
+
+.conversation-message:not(.conversation-current) .reader-avatar.reader-avatar-fallback {
+  background: linear-gradient(145deg, #2d2621, #211c18) !important;
+  color: #cdb9a8 !important;
+}
+
+@media (max-width: 760px) {
+  .reader-avatar .reader-avatar-initials {
+    font-size: 12px !important;
+  }
+}
