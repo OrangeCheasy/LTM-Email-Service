@@ -14,10 +14,12 @@ type MailListProps = {
   unreadCount: number;
   notificationState: NotificationState;
   notificationsDisabled: boolean;
+  profilePhotoUrl: string | null;
   onSearchChange: (value: string) => void;
   onRefresh: () => void;
   onOpenMessage: (id: string) => void;
   onToggleNotifications: () => void;
+  onOpenProfile: () => void;
 };
 
 type ListFilter = "all" | "unread" | "starred";
@@ -44,10 +46,12 @@ export function MailList({
   unreadCount,
   notificationState,
   notificationsDisabled,
+  profilePhotoUrl,
   onSearchChange,
   onRefresh,
   onOpenMessage,
   onToggleNotifications,
+  onOpenProfile,
 }: MailListProps) {
   const [listFilter, setListFilter] = useState<ListFilter>("all");
   const filtersEnabled = folder !== "drafts";
@@ -79,9 +83,11 @@ export function MailList({
         search={search}
         notificationState={notificationState}
         notificationsDisabled={notificationsDisabled}
+        profilePhotoUrl={profilePhotoUrl}
         onSearchChange={onSearchChange}
         onSearch={onRefresh}
         onToggleNotifications={onToggleNotifications}
+        onOpenProfile={onOpenProfile}
       />
 
       <header className="mail-list-header">
@@ -90,6 +96,9 @@ export function MailList({
           <h1>{folderLabel}</h1>
         </div>
         <div className="mail-list-header-actions">
+          <button className="icon-button mobile-profile-button" type="button" aria-label="Open profile settings" onClick={onOpenProfile}>
+            <span className="mobile-profile-avatar">{profilePhotoUrl ? <img src={profilePhotoUrl} alt="" /> : "LM"}</span>
+          </button>
           <button
             className={`icon-button mobile-notification-button notification-${notificationState}`}
             type="button"
