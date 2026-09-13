@@ -143,7 +143,7 @@ async function sendToSubscription(env: Env, row: StoredSubscription, notificatio
   const payload = await buildPushPayload(
     {
       data: JSON.stringify({
-        title: "LTM Mail",
+        title: "LTM Mails",
         body: `${notification.sender}: ${notification.subject}`.slice(0, 220),
         tag: `message-${notification.id}`,
         url: "/",
