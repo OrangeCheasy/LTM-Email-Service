@@ -7,24 +7,33 @@ type ComposeModalProps = {
   compose: ComposeState;
   files: File[];
   sending: boolean;
+  draftStatus: "saving" | "saved" | null;
   onChange: (next: ComposeState) => void;
   onFilesChange: (files: File[]) => void;
   onClose: () => void;
+  onDiscard: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 };
 
-export function ComposeModal({ open, compose, files, sending, onChange, onFilesChange, onClose, onSubmit }: ComposeModalProps) {
+export function ComposeModal({ open, compose, files, sending, draftStatus, onChange, onFilesChange, onClose, onDiscard, onSubmit }: ComposeModalProps) {
   if (!open) return null;
+
+  const mode = compose.replyToMessageId ? "Reply" : compose.forwardMessageId ? "Forward" : "New message";
 
   return (
     <div className="compose-overlay" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target && !sending) onClose(); }}>
       <form className="compose-modal" onSubmit={onSubmit}>
         <header className="compose-header">
           <div>
-            <span className="eyebrow">{compose.replyToMessageId ? "Conversation" : "Compose"}</span>
-            <strong>{compose.replyToMessageId ? "Reply" : "New message"}</strong>
+            <span className="eyebrow">{compose.replyToMessageId || compose.forwardMessageId ? "Conversation" : "Compose"}</span>
+            <strong>{mode}</strong>
           </div>
-          <button className="compose-close" type="button" aria-label="Close compose" disabled={sending} onClick={onClose}>×</button>
+          <div className="compose-header-actions">
+            {compose.draftId ? (
+              <button className="compose-discard" type="button" aria-label="Discard draft" title="Discard draft" disabled={sending} onClick={onDiscard}><Icon name="trash" size={15} /></button>
+            ) : null}
+            <button className="compose-close" type="button" aria-label="Close compose" disabled={sending} onClick={onClose}>×</button>
+          </div>
         </header>
 
         <div className="compose-fields">
@@ -38,6 +47,8 @@ export function ComposeModal({ open, compose, files, sending, onChange, onFilesC
 
         <textarea required className="compose-body" aria-label="Message" value={compose.text} onChange={(event) => onChange({ ...compose, text: event.target.value })} placeholder="Write your message…" />
 
+        {compose.forwardMessageId ? <div className="forward-attachment-note"><Icon name="paperclip" size={13} />Original attachments will be included when you send.</div> : null}
+
         {files.length > 0 ? (
           <div className="file-chips">
             {files.map((file) => <span key={`${file.name}-${file.lastModified}`}><Icon name="paperclip" size={13} />{file.name}</span>)}
@@ -46,7 +57,7 @@ export function ComposeModal({ open, compose, files, sending, onChange, onFilesC
 
         <footer className="compose-footer">
           <label className="attach-control"><Icon name="paperclip" size={16} /><span>Attach</span><input type="file" multiple onChange={(event) => onFilesChange(Array.from(event.target.files ?? []))} /></label>
-          <span className="compose-from">From contact@liamthemo.com</span>
+          <span className="compose-from">{draftStatus === "saving" ? "Saving draft…" : draftStatus === "saved" ? "Draft saved" : "From contact@liamthemo.com"}</span>
           <button className="send-control" type="submit" disabled={sending}><Icon name="send" size={15} />{sending ? "Sending…" : "Send"}</button>
         </footer>
       </form>

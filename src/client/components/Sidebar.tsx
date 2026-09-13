@@ -5,6 +5,7 @@ type SidebarProps = {
   folders: FolderDefinition[];
   activeFolder: Folder;
   unreadCount: number;
+  draftCount: number;
   health: HealthState;
   notificationState: NotificationState;
   notificationsDisabled: boolean;
@@ -25,11 +26,11 @@ function notificationText(state: NotificationState): string {
   }
 }
 
-export function Sidebar({ folders, activeFolder, unreadCount, health, notificationState, notificationsDisabled, onFolderChange, onCompose, onToggleNotifications }: SidebarProps) {
+export function Sidebar({ folders, activeFolder, unreadCount, draftCount, health, notificationState, notificationsDisabled, onFolderChange, onCompose, onToggleNotifications }: SidebarProps) {
   return (
     <aside className="desktop-sidebar">
       <div className="brand-row">
-        <div className="brand-mark">LM</div>
+        <div className="brand-mark" aria-hidden="true"><Icon name="mail" size={17} /></div>
         <div className="brand-copy">
           <strong className="brand-title">LTM Mails</strong>
         </div>
@@ -42,17 +43,20 @@ export function Sidebar({ folders, activeFolder, unreadCount, health, notificati
 
       <nav className="folder-nav" aria-label="Mail folders">
         <div className="nav-label">Mailbox</div>
-        {folders.map((item) => (
-          <button
-            key={item.key}
-            className={`nav-item ${activeFolder === item.key ? "active" : ""}`}
-            type="button"
-            onClick={() => onFolderChange(item.key)}
-          >
-            <span className="nav-item-main"><Icon name={item.icon} size={17} />{item.label}</span>
-            {item.key === "inbox" && unreadCount > 0 ? <span className="nav-count">{unreadCount}</span> : null}
-          </button>
-        ))}
+        {folders.map((item) => {
+          const count = item.key === "inbox" ? unreadCount : item.key === "drafts" ? draftCount : 0;
+          return (
+            <button
+              key={item.key}
+              className={`nav-item ${activeFolder === item.key ? "active" : ""}`}
+              type="button"
+              onClick={() => onFolderChange(item.key)}
+            >
+              <span className="nav-item-main"><Icon name={item.icon} size={17} />{item.label}</span>
+              {count > 0 ? <span className="nav-count">{count}</span> : null}
+            </button>
+          );
+        })}
       </nav>
 
       <div className="sidebar-spacer" />
@@ -63,7 +67,7 @@ export function Sidebar({ folders, activeFolder, unreadCount, health, notificati
       </button>
 
       <div className="account-card">
-        <div className="account-avatar">LM</div>
+        <div className="account-avatar"><Icon name="mail" size={14} /></div>
         <div><strong>Private mailbox</strong><span><i className={`status-dot ${health}`} />{health === "online" ? "Connected" : health === "checking" ? "Connecting" : "Offline"}</span></div>
         <Icon name="lock" size={15} />
       </div>

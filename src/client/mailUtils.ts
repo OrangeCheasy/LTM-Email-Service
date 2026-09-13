@@ -41,3 +41,7 @@ export function senderInitial(message: MessageListItem): string {
 export function replySubject(subject: string): string {
   return /^re:/i.test(subject) ? subject : `Re: ${subject}`;
 }
+
+export function forwardSubject(subject: string): string {
+  return /^(fwd|fw):/i.test(subject) ? subject : `Fwd: ${subject}`;
+}

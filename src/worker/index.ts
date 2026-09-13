@@ -1,3 +1,4 @@
+import { deleteDraft, getDraft, saveDraft } from "./api/drafts";
 import { healthResponse } from "./api/health";
 import { downloadAttachment, getMessage, listMessages, patchMessage } from "./api/mail";
 import { receiveEmail } from "./email/receive";
@@ -15,9 +16,18 @@ export default {
     if (url.pathname === "/api/health" && request.method === "GET") return healthResponse(env);
     if (url.pathname === "/api/messages" && request.method === "GET") return listMessages(request, env);
     if (url.pathname === "/api/send" && request.method === "POST") return sendEmail(request, env);
+    if (url.pathname === "/api/drafts" && request.method === "POST") return saveDraft(request, env);
     if (url.pathname === "/api/push/config" && request.method === "GET") return pushConfig(env);
     if (url.pathname === "/api/push/subscribe" && request.method === "POST") return subscribePush(request, env);
     if (url.pathname === "/api/push/unsubscribe" && request.method === "POST") return unsubscribePush(request, env);
+
+    const draftMatch = url.pathname.match(/^\/api\/drafts\/([^/]+)$/);
+    if (draftMatch) {
+      const id = decodeURIComponent(draftMatch[1]);
+      if (request.method === "GET") return getDraft(id, env);
+      if (request.method === "DELETE") return deleteDraft(id, env);
+      return jsonError("Method not allowed", 405);
+    }
 
     const messageMatch = url.pathname.match(/^\/api\/messages\/([^/]+)$/);
     if (messageMatch) {

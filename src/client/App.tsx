@@ -1,21 +1,31 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ComposeModal } from "./components/ComposeModal";
 import { MailList } from "./components/MailList";
 import { MessageReader } from "./components/MessageReader";
 import { MobileNav } from "./components/MobileNav";
 import { Sidebar } from "./components/Sidebar";
-import type { ComposeState, Folder, FolderDefinition, HealthState, MessageDetail, MessageListItem, NotificationState } from "./mailTypes";
-import { replySubject } from "./mailUtils";
+import type { ComposeState, DraftDetail, Folder, FolderDefinition, HealthState, MessageDetail, MessageListItem, NotificationState } from "./mailTypes";
+import { formatFullDate, forwardSubject, replySubject } from "./mailUtils";
 
 const folders: FolderDefinition[] = [
   { key: "inbox", label: "Inbox", icon: "inbox" },
   { key: "starred", label: "Starred", icon: "star" },
   { key: "sent", label: "Sent", icon: "send" },
+  { key: "drafts", label: "Drafts", icon: "draft" },
   { key: "archive", label: "Archive", icon: "archive" },
   { key: "trash", label: "Trash", icon: "trash" },
 ];
 
-const emptyCompose: ComposeState = { to: "", cc: "", bcc: "", subject: "", text: "", replyToMessageId: "" };
+const emptyCompose: ComposeState = {
+  to: "",
+  cc: "",
+  bcc: "",
+  subject: "",
+  text: "",
+  replyToMessageId: "",
+  forwardMessageId: "",
+  draftId: "",
+};
 const AUTO_REFRESH_MS = 15_000;
 
 function base64UrlToArrayBuffer(value: string): ArrayBuffer {
@@ -30,12 +40,35 @@ function base64UrlToArrayBuffer(value: string): ArrayBuffer {
   return buffer;
 }
 
+function hasDraftContent(compose: ComposeState): boolean {
+  return Boolean(
+    compose.to.trim()
+    || compose.cc.trim()
+    || compose.bcc.trim()
+    || compose.subject.trim()
+    || compose.text.trim()
+    || compose.replyToMessageId
+    || compose.forwardMessageId,
+  );
+}
+
+function forwardedBody(message: MessageDetail): string {
+  const from = message.direction === "outbound"
+    ? "contact@liamthemo.com"
+    : message.fromName ? `${message.fromName} <${message.fromAddress}>` : message.fromAddress;
+  const to = message.toAddresses.join(", ") || "contact@liamthemo.com";
+  const date = formatFullDate(message.sentAt || message.receivedAt);
+  return `\n\n---------- Forwarded message ----------\nFrom: ${from}\nDate: ${date}\nSubject: ${message.subject || "(no subject)"}\nTo: ${to}\n\n${message.bodyText || ""}`;
+}
+
 export function App() {
   const [health, setHealth] = useState<HealthState>("checking");
   const [folder, setFolder] = useState<Folder>("inbox");
   const [messages, setMessages] = useState<MessageListItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [draftCount, setDraftCount] = useState(0);
   const [selected, setSelected] = useState<MessageDetail | null>(null);
+  const [thread, setThread] = useState<MessageDetail[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -43,8 +76,11 @@ export function App() {
   const [compose, setCompose] = useState<ComposeState>(emptyCompose);
   const [files, setFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
+  const [draftStatus, setDraftStatus] = useState<"saving" | "saved" | null>(null);
   const [notificationState, setNotificationState] = useState<NotificationState>("checking");
   const [pushPublicKey, setPushPublicKey] = useState<string | null>(null);
+  const persistedDraftIds = useRef(new Set<string>());
+  const draftFilesCache = useRef(new Map<string, File[]>());
 
   useEffect(() => {
     fetch("/api/health")
@@ -99,9 +135,10 @@ export function App() {
       if (query.trim()) params.set("q", query.trim());
       const response = await fetch(`/api/messages?${params}`);
       if (!response.ok) throw new Error("Could not load mail");
-      const data = await response.json() as { messages: MessageListItem[]; unreadCount: number };
+      const data = await response.json() as { messages: MessageListItem[]; unreadCount: number; draftCount: number };
       setMessages(data.messages);
       setUnreadCount(data.unreadCount);
+      setDraftCount(data.draftCount);
     } catch (loadError) {
       if (!silent) setError(loadError instanceof Error ? loadError.message : "Could not load mail");
     } finally {
@@ -135,9 +172,45 @@ export function App() {
     return () => window.clearTimeout(timer);
   }, [error]);
 
+  const persistDraft = useCallback(async (snapshot: ComposeState): Promise<void> => {
+    if (!snapshot.draftId || !hasDraftContent(snapshot)) return;
+    setDraftStatus("saving");
+    try {
+      const response = await fetch("/api/drafts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: snapshot.draftId,
+          to: snapshot.to,
+          cc: snapshot.cc,
+          bcc: snapshot.bcc,
+          subject: snapshot.subject,
+          text: snapshot.text,
+          replyToMessageId: snapshot.replyToMessageId,
+          forwardMessageId: snapshot.forwardMessageId,
+        }),
+      });
+      if (!response.ok) throw new Error("Draft could not be saved");
+      const wasKnown = persistedDraftIds.current.has(snapshot.draftId);
+      persistedDraftIds.current.add(snapshot.draftId);
+      if (!wasKnown) setDraftCount((count) => count + 1);
+      setDraftStatus("saved");
+    } catch {
+      setDraftStatus(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!composeOpen || sending || !hasDraftContent(compose)) return;
+    setDraftStatus("saving");
+    const timer = window.setTimeout(() => void persistDraft(compose), 900);
+    return () => window.clearTimeout(timer);
+  }, [compose, composeOpen, persistDraft, sending]);
+
   const changeFolder = (next: Folder) => {
     setFolder(next);
     setSelected(null);
+    setThread([]);
     setSearch("");
   };
 
@@ -190,15 +263,39 @@ export function App() {
   const openMessage = async (id: string) => {
     setError(null);
     const listItem = messages.find((message) => message.id === id);
-    const wasUnreadInbound = Boolean(listItem && !listItem.isRead && listItem.direction === "inbound");
 
     try {
+      if (listItem?.isDraft || folder === "drafts") {
+        const response = await fetch(`/api/drafts/${encodeURIComponent(id)}`);
+        if (!response.ok) throw new Error("Could not open draft");
+        const data = await response.json() as { draft: DraftDetail };
+        const draft = data.draft;
+        persistedDraftIds.current.add(draft.id);
+        setCompose({
+          to: draft.to,
+          cc: draft.cc,
+          bcc: draft.bcc,
+          subject: draft.subject,
+          text: draft.text,
+          replyToMessageId: draft.replyToMessageId,
+          forwardMessageId: draft.forwardMessageId,
+          draftId: draft.id,
+        });
+        setFiles(draftFilesCache.current.get(draft.id) ?? []);
+        setDraftStatus("saved");
+        setSelected(null);
+        setThread([]);
+        setComposeOpen(true);
+        return;
+      }
+
       const response = await fetch(`/api/messages/${encodeURIComponent(id)}`);
       if (!response.ok) throw new Error("Could not open message");
-      const data = await response.json() as { message: MessageDetail };
+      const data = await response.json() as { message: MessageDetail; thread: MessageDetail[]; newlyReadCount: number };
       setSelected(data.message);
-      setMessages((current) => current.map((item) => item.id === id ? { ...item, isRead: true } : item));
-      if (wasUnreadInbound) setUnreadCount((count) => Math.max(0, count - 1));
+      setThread(data.thread);
+      setMessages((current) => current.map((item) => item.threadId === data.message.threadId ? { ...item, isRead: true } : item));
+      if (data.newlyReadCount > 0) setUnreadCount((count) => Math.max(0, count - data.newlyReadCount));
     } catch (openError) {
       setError(openError instanceof Error ? openError.message : "Could not open message");
     }
@@ -216,23 +313,85 @@ export function App() {
       setError(data.error ?? "Could not update message");
       return;
     }
-    if (closeAfter) setSelected(null);
-    else setSelected((current) => current ? { ...current, ...patch } as MessageDetail : current);
+    if (closeAfter) {
+      setSelected(null);
+      setThread([]);
+    } else {
+      setSelected((current) => current ? { ...current, ...patch } as MessageDetail : current);
+      setThread((current) => current.map((item) => item.id === selected.id ? { ...item, ...patch } as MessageDetail : item));
+    }
     await loadMessages();
   };
 
   const startCompose = () => {
-    setCompose(emptyCompose);
+    setCompose({ ...emptyCompose, draftId: crypto.randomUUID() });
     setFiles([]);
+    setDraftStatus(null);
     setComposeOpen(true);
   };
 
   const startReply = () => {
     if (!selected) return;
-    const recipient = selected.direction === "inbound" ? selected.fromAddress : selected.toAddresses[0] ?? "";
-    setCompose({ to: recipient, cc: "", bcc: "", subject: replySubject(selected.subject), text: "", replyToMessageId: selected.id });
+    const target = thread[thread.length - 1] ?? selected;
+    const recipient = target.direction === "inbound" ? target.fromAddress : target.toAddresses[0] ?? "";
+    setCompose({
+      to: recipient,
+      cc: "",
+      bcc: "",
+      subject: replySubject(target.subject),
+      text: "",
+      replyToMessageId: target.id,
+      forwardMessageId: "",
+      draftId: crypto.randomUUID(),
+    });
     setFiles([]);
+    setDraftStatus(null);
     setComposeOpen(true);
+  };
+
+  const startForward = () => {
+    if (!selected) return;
+    setCompose({
+      to: "",
+      cc: "",
+      bcc: "",
+      subject: forwardSubject(selected.subject),
+      text: forwardedBody(selected),
+      replyToMessageId: "",
+      forwardMessageId: selected.id,
+      draftId: crypto.randomUUID(),
+    });
+    setFiles([]);
+    setDraftStatus(null);
+    setComposeOpen(true);
+  };
+
+  const closeCompose = () => {
+    if (hasDraftContent(compose)) void persistDraft(compose);
+    if (compose.draftId && files.length > 0) draftFilesCache.current.set(compose.draftId, files);
+    setComposeOpen(false);
+    setFiles([]);
+    setDraftStatus(null);
+  };
+
+  const discardCompose = async () => {
+    const id = compose.draftId;
+    if (id && persistedDraftIds.current.has(id)) {
+      await fetch(`/api/drafts/${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => undefined);
+      persistedDraftIds.current.delete(id);
+      setDraftCount((count) => Math.max(0, count - 1));
+    }
+    if (id) draftFilesCache.current.delete(id);
+    setComposeOpen(false);
+    setCompose(emptyCompose);
+    setFiles([]);
+    setDraftStatus(null);
+    if (folder === "drafts") void loadMessages("drafts", search, true);
+  };
+
+  const updateFiles = (nextFiles: File[]) => {
+    setFiles(nextFiles);
+    if (compose.draftId) draftFilesCache.current.set(compose.draftId, nextFiles);
   };
 
   const submitCompose = async (event: FormEvent<HTMLFormElement>) => {
@@ -247,15 +406,26 @@ export function App() {
       form.set("subject", compose.subject);
       form.set("text", compose.text);
       if (compose.replyToMessageId) form.set("replyToMessageId", compose.replyToMessageId);
+      if (compose.forwardMessageId) form.set("forwardMessageId", compose.forwardMessageId);
+      if (compose.draftId) form.set("draftId", compose.draftId);
       files.forEach((file) => form.append("attachments", file));
       const response = await fetch("/api/send", { method: "POST", body: form });
       const data = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(data.error ?? "Email could not be sent");
+
+      if (compose.draftId && persistedDraftIds.current.has(compose.draftId)) {
+        persistedDraftIds.current.delete(compose.draftId);
+        setDraftCount((count) => Math.max(0, count - 1));
+      }
+      if (compose.draftId) draftFilesCache.current.delete(compose.draftId);
+
       setComposeOpen(false);
       setCompose(emptyCompose);
       setFiles([]);
+      setDraftStatus(null);
       setFolder("sent");
       setSelected(null);
+      setThread([]);
       setSearch("");
     } catch (sendError) {
       setError(sendError instanceof Error ? sendError.message : "Email could not be sent");
@@ -273,6 +443,7 @@ export function App() {
         folders={folders}
         activeFolder={folder}
         unreadCount={unreadCount}
+        draftCount={draftCount}
         health={health}
         notificationState={notificationState}
         notificationsDisabled={notificationsDisabled}
@@ -286,7 +457,7 @@ export function App() {
           folder={folder}
           folderLabel={currentFolderLabel}
           messages={messages}
-          selectedId={selected?.id ?? null}
+          selectedId={folder === "drafts" && composeOpen ? compose.draftId : selected?.id ?? null}
           loading={loading}
           search={search}
           unreadCount={unreadCount}
@@ -299,22 +470,26 @@ export function App() {
         />
         <MessageReader
           message={selected}
-          onBack={() => setSelected(null)}
+          thread={thread}
+          onBack={() => { setSelected(null); setThread([]); }}
           onReply={startReply}
+          onForward={startForward}
           onPatch={(patch, closeAfter) => void patchSelected(patch, closeAfter)}
         />
       </div>
 
-      <MobileNav folders={folders} activeFolder={folder} unreadCount={unreadCount} onFolderChange={changeFolder} onCompose={startCompose} />
+      <MobileNav folders={folders} activeFolder={folder} unreadCount={unreadCount} draftCount={draftCount} onFolderChange={changeFolder} onCompose={startCompose} />
 
       <ComposeModal
         open={composeOpen}
         compose={compose}
         files={files}
         sending={sending}
+        draftStatus={draftStatus}
         onChange={setCompose}
-        onFilesChange={setFiles}
-        onClose={() => setComposeOpen(false)}
+        onFilesChange={updateFiles}
+        onClose={closeCompose}
+        onDiscard={() => void discardCompose()}
         onSubmit={submitCompose}
       />
 
