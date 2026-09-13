@@ -9,12 +9,16 @@ on:
 permissions:
   contents: read
 
-env:
-  CLOUDFLARE_READY: ${{ vars.CLOUDFLARE_READY }}
+concurrency:
+  group: production
+  cancel-in-progress: false
 
 jobs:
-  build:
+  deploy:
+    name: Build, migrate, and deploy
     runs-on: ubuntu-latest
+    environment: production
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -23,30 +27,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
       - name: Type-check and build
-        run: npm run build
-
-  deploy:
-    if: ${{ vars.CLOUDFLARE_READY == 'true' }}
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Install dependencies
-        run: npm install --no-audit --no-fund
-
-      - name: Build
         run: npm run build
 
       - name: Apply D1 migrations
@@ -55,17 +41,9 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
-      - name: Deploy to Cloudflare
+      - name: Deploy Worker to Cloudflare
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy
-
-  deployment-disabled:
-    if: ${{ vars.CLOUDFLARE_READY != 'true' }}
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Explain deployment gate
-        run: echo "Build passed. Set repository variable CLOUDFLARE_READY=true after Cloudflare resources and secrets are configured to enable production deployment."
