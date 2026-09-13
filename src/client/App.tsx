@@ -79,11 +79,14 @@ function replySubject(subject: string): string {
   return /^re:/i.test(subject) ? subject : `Re: ${subject}`;
 }
 
-function base64UrlToUint8Array(value: string): Uint8Array {
+function base64UrlToArrayBuffer(value: string): ArrayBuffer {
   const padding = "=".repeat((4 - (value.length % 4)) % 4);
   const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");
   const raw = atob(base64);
-  return Uint8Array.from(raw, (character) => character.charCodeAt(0));
+  const buffer = new ArrayBuffer(raw.length);
+  const bytes = new Uint8Array(buffer);
+  for (let index = 0; index < raw.length; index += 1) bytes[index] = raw.charCodeAt(index);
+  return buffer;
 }
 
 function notificationLabel(state: NotificationState): string {
@@ -226,7 +229,7 @@ export function App() {
 
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: base64UrlToUint8Array(pushPublicKey),
+        applicationServerKey: base64UrlToArrayBuffer(pushPublicKey),
       });
 
       const response = await fetch("/api/push/subscribe", {
