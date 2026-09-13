@@ -50,12 +50,27 @@ export function MailList({
 }: MailListProps) {
   const [listFilter, setListFilter] = useState<ListFilter>("all");
   const filtersEnabled = folder !== "drafts";
+  const threadedMessages = useMemo(() => {
+    if (folder === "drafts") return messages;
+    const conversations = new Map<string, MessageListItem>();
+    for (const item of messages) {
+      const existing = conversations.get(item.threadId);
+      if (!existing) {
+        conversations.set(item.threadId, { ...item });
+        continue;
+      }
+      if (!item.isRead) existing.isRead = false;
+      if (item.isStarred) existing.isStarred = true;
+      if (item.hasAttachments) existing.hasAttachments = true;
+    }
+    return [...conversations.values()];
+  }, [folder, messages]);
   const visibleMessages = useMemo(() => {
-    if (!filtersEnabled) return messages;
-    if (listFilter === "unread") return messages.filter((message) => !message.isRead);
-    if (listFilter === "starred") return messages.filter((message) => message.isStarred);
-    return messages;
-  }, [filtersEnabled, listFilter, messages]);
+    if (!filtersEnabled) return threadedMessages;
+    if (listFilter === "unread") return threadedMessages.filter((message) => !message.isRead);
+    if (listFilter === "starred") return threadedMessages.filter((message) => message.isStarred);
+    return threadedMessages;
+  }, [filtersEnabled, listFilter, threadedMessages]);
 
   return (
     <section className="mail-list-pane">
