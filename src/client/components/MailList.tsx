@@ -49,11 +49,13 @@ export function MailList({
   onToggleNotifications,
 }: MailListProps) {
   const [listFilter, setListFilter] = useState<ListFilter>("all");
+  const filtersEnabled = folder !== "drafts";
   const visibleMessages = useMemo(() => {
+    if (!filtersEnabled) return messages;
     if (listFilter === "unread") return messages.filter((message) => !message.isRead);
     if (listFilter === "starred") return messages.filter((message) => message.isStarred);
     return messages;
-  }, [listFilter, messages]);
+  }, [filtersEnabled, listFilter, messages]);
 
   return (
     <section className="mail-list-pane">
@@ -80,38 +82,40 @@ export function MailList({
 
       <div className="search-wrap mail-list-search">
         <Icon name="search" size={17} />
-        <input aria-label="Search mail" placeholder="Search emails, people, or keywords…" value={search} onChange={(event) => onSearchChange(event.target.value)} />
+        <input aria-label="Search mail" placeholder={folder === "drafts" ? "Search drafts…" : "Search emails, people, or keywords…"} value={search} onChange={(event) => onSearchChange(event.target.value)} />
         {search ? <button type="button" aria-label="Clear search" onClick={() => onSearchChange("")}>×</button> : null}
       </div>
 
-      <div className="mail-filter-tabs" role="tablist" aria-label="Message filters">
-        <button type="button" className={listFilter === "all" ? "active" : ""} onClick={() => setListFilter("all")}>All</button>
-        <button type="button" className={listFilter === "unread" ? "active" : ""} onClick={() => setListFilter("unread")}>Unread</button>
-        <button type="button" className={listFilter === "starred" ? "active" : ""} onClick={() => setListFilter("starred")}>Starred</button>
-      </div>
+      {filtersEnabled ? (
+        <div className="mail-filter-tabs" role="tablist" aria-label="Message filters">
+          <button type="button" className={listFilter === "all" ? "active" : ""} onClick={() => setListFilter("all")}>All</button>
+          <button type="button" className={listFilter === "unread" ? "active" : ""} onClick={() => setListFilter("unread")}>Unread</button>
+          <button type="button" className={listFilter === "starred" ? "active" : ""} onClick={() => setListFilter("starred")}>Starred</button>
+        </div>
+      ) : <div className="draft-list-label">Autosaved drafts</div>}
 
       <div className="mail-list-scroll" aria-busy={loading}>
         {loading ? <div className="mail-list-state">Loading mail…</div> : null}
         {!loading && visibleMessages.length === 0 ? (
           <div className="mail-list-empty">
-            <div className="empty-orb"><Icon name={search ? "search" : "inbox"} size={22} /></div>
-            <strong>{search ? "No results" : listFilter === "all" ? `No mail in ${folderLabel.toLowerCase()}` : `No ${listFilter} messages`}</strong>
-            <span>{search ? "Try a different name, subject, or phrase." : "Messages will appear here when they arrive."}</span>
+            <div className="empty-orb"><Icon name={search ? "search" : folder === "drafts" ? "draft" : "inbox"} size={22} /></div>
+            <strong>{search ? "No results" : folder === "drafts" ? "No saved drafts" : listFilter === "all" ? `No mail in ${folderLabel.toLowerCase()}` : `No ${listFilter} messages`}</strong>
+            <span>{search ? "Try a different name, subject, or phrase." : folder === "drafts" ? "Messages you start writing will autosave here." : "Messages will appear here when they arrive."}</span>
           </div>
         ) : null}
 
         {!loading && visibleMessages.map((message) => (
           <button
             key={message.id}
-            className={`mail-row ${message.isRead ? "" : "unread"} ${selectedId === message.id ? "selected" : ""}`}
+            className={`mail-row ${message.isRead ? "" : "unread"} ${message.isDraft ? "draft-row" : ""} ${selectedId === message.id ? "selected" : ""}`}
             type="button"
             onClick={() => onOpenMessage(message.id)}
           >
             <span className="mail-row-unread-marker" aria-hidden="true" />
-            <div className="sender-avatar" aria-hidden="true">{senderInitial(message)}</div>
+            <div className="sender-avatar" aria-hidden="true">{message.isDraft ? <Icon name="draft" size={16} /> : senderInitial(message)}</div>
             <div className="mail-row-copy">
               <div className="mail-row-topline">
-                <span className="mail-row-sender">{message.direction === "outbound" ? `To: ${senderLabel(message)}` : senderLabel(message)}</span>
+                <span className="mail-row-sender">{message.isDraft ? `Draft · ${message.toAddresses.join(", ") || "No recipient"}` : message.direction === "outbound" ? `To: ${senderLabel(message)}` : senderLabel(message)}</span>
                 <time>{formatDate(message.sentAt || message.receivedAt)}</time>
               </div>
               <div className="mail-row-subject">
@@ -119,7 +123,7 @@ export function MailList({
                 {message.isStarred ? <span className="star-mark">★</span> : null}
                 {message.hasAttachments ? <span className="attachment-mark"><Icon name="paperclip" size={13} /></span> : null}
               </div>
-              <p>{message.preview || "No preview available"}</p>
+              <p>{message.preview || (message.isDraft ? "Empty draft" : "No preview available")}</p>
             </div>
           </button>
         ))}
