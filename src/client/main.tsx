@@ -4,6 +4,7 @@ import { App } from "./App";
 import "./styles.css";
 import "./dark.css";
 import "./mobile-notifications.css";
+import "./mockup.css";
 
 const root = document.getElementById("root");
 

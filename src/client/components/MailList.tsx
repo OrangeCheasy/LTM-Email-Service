@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import type { Folder, MessageListItem, NotificationState } from "../mailTypes";
 import { formatDate, senderInitial, senderLabel } from "../mailUtils";
 import { Icon } from "./Icon";
@@ -17,6 +18,8 @@ type MailListProps = {
   onOpenMessage: (id: string) => void;
   onToggleNotifications: () => void;
 };
+
+type ListFilter = "all" | "unread" | "starred";
 
 function notificationLabel(state: NotificationState): string {
   switch (state) {
@@ -45,6 +48,13 @@ export function MailList({
   onOpenMessage,
   onToggleNotifications,
 }: MailListProps) {
+  const [listFilter, setListFilter] = useState<ListFilter>("all");
+  const visibleMessages = useMemo(() => {
+    if (listFilter === "unread") return messages.filter((message) => !message.isRead);
+    if (listFilter === "starred") return messages.filter((message) => message.isStarred);
+    return messages;
+  }, [listFilter, messages]);
+
   return (
     <section className="mail-list-pane">
       <header className="mail-list-header">
@@ -68,29 +78,36 @@ export function MailList({
         </div>
       </header>
 
-      <div className="search-wrap">
+      <div className="search-wrap mail-list-search">
         <Icon name="search" size={17} />
-        <input aria-label="Search mail" placeholder="Search mail" value={search} onChange={(event) => onSearchChange(event.target.value)} />
+        <input aria-label="Search mail" placeholder="Search emails, people, or keywords…" value={search} onChange={(event) => onSearchChange(event.target.value)} />
         {search ? <button type="button" aria-label="Clear search" onClick={() => onSearchChange("")}>×</button> : null}
+      </div>
+
+      <div className="mail-filter-tabs" role="tablist" aria-label="Message filters">
+        <button type="button" className={listFilter === "all" ? "active" : ""} onClick={() => setListFilter("all")}>All</button>
+        <button type="button" className={listFilter === "unread" ? "active" : ""} onClick={() => setListFilter("unread")}>Unread</button>
+        <button type="button" className={listFilter === "starred" ? "active" : ""} onClick={() => setListFilter("starred")}>Starred</button>
       </div>
 
       <div className="mail-list-scroll" aria-busy={loading}>
         {loading ? <div className="mail-list-state">Loading mail…</div> : null}
-        {!loading && messages.length === 0 ? (
+        {!loading && visibleMessages.length === 0 ? (
           <div className="mail-list-empty">
             <div className="empty-orb"><Icon name={search ? "search" : "inbox"} size={22} /></div>
-            <strong>{search ? "No results" : `No mail in ${folderLabel.toLowerCase()}`}</strong>
+            <strong>{search ? "No results" : listFilter === "all" ? `No mail in ${folderLabel.toLowerCase()}` : `No ${listFilter} messages`}</strong>
             <span>{search ? "Try a different name, subject, or phrase." : "Messages will appear here when they arrive."}</span>
           </div>
         ) : null}
 
-        {!loading && messages.map((message) => (
+        {!loading && visibleMessages.map((message) => (
           <button
             key={message.id}
             className={`mail-row ${message.isRead ? "" : "unread"} ${selectedId === message.id ? "selected" : ""}`}
             type="button"
             onClick={() => onOpenMessage(message.id)}
           >
+            <span className="mail-row-unread-marker" aria-hidden="true" />
             <div className="sender-avatar" aria-hidden="true">{senderInitial(message)}</div>
             <div className="mail-row-copy">
               <div className="mail-row-topline">
@@ -98,7 +115,6 @@ export function MailList({
                 <time>{formatDate(message.sentAt || message.receivedAt)}</time>
               </div>
               <div className="mail-row-subject">
-                {!message.isRead ? <i className="unread-dot" /> : null}
                 <strong>{message.subject || "(no subject)"}</strong>
                 {message.isStarred ? <span className="star-mark">★</span> : null}
                 {message.hasAttachments ? <span className="attachment-mark"><Icon name="paperclip" size={13} /></span> : null}
