@@ -15,6 +15,10 @@ function messageSender(message: MessageDetail): string {
   return message.direction === "outbound" ? "You" : senderLabel(message);
 }
 
+function messageAvatarLabel(message: MessageDetail): string {
+  return message.direction === "outbound" ? "LM" : senderInitial(message);
+}
+
 function messageSecondary(message: MessageDetail): string {
   return message.direction === "outbound"
     ? `to ${message.toAddresses.join(", ") || "Unknown recipient"}`
@@ -54,7 +58,7 @@ export function MessageReader({ message, thread, onBack, onReply, onForward, onP
           <section key={item.id} className={`conversation-message ${item.id === message.id ? "conversation-current" : ""}`}>
             <div className="message-heading">
               <div className="message-heading-meta">
-                <span className="reader-avatar">{senderInitial(item)}</span>
+                <span className="sender-avatar reader-avatar" aria-hidden="true">{messageAvatarLabel(item)}</span>
                 <div>
                   <strong>{messageSender(item)}</strong>
                   <span>{messageSecondary(item)}</span>
