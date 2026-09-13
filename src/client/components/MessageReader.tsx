@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { MessageDetail } from "../mailTypes";
 import { formatBytes, formatFullDate, senderInitial, senderLabel } from "../mailUtils";
 import { AttachmentPreview } from "./AttachmentPreview";
@@ -7,7 +7,6 @@ import { Icon } from "./Icon";
 type MessageReaderProps = {
   message: MessageDetail | null;
   thread: MessageDetail[];
-  profilePhotoUrl: string | null;
   onBack: () => void;
   onReply: () => void;
   onForward: () => void;
@@ -28,8 +27,34 @@ function messageSecondary(message: MessageDetail): string {
     : message.fromName ? message.fromAddress : `to ${message.toAddresses.join(", ") || "you"}`;
 }
 
-export function MessageReader({ message, thread, profilePhotoUrl, onBack, onReply, onForward, onPatch }: MessageReaderProps) {
+export function MessageReader({ message, thread, onBack, onReply, onForward, onPatch }: MessageReaderProps) {
   const [previewAttachment, setPreviewAttachment] = useState<MessageDetail["attachments"][number] | null>(null);
+  const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/profile", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return response.json() as Promise<{ hasPhoto: boolean; version: string | null }>;
+      })
+      .then((profile) => {
+        if (!cancelled && profile?.hasPhoto) {
+          setProfilePhotoUrl(`/api/profile/photo?v=${encodeURIComponent(profile.version ?? "1")}`);
+        }
+      })
+      .catch(() => undefined);
+
+    const onProfilePhotoChanged = (event: Event) => {
+      const customEvent = event as CustomEvent<string | null>;
+      setProfilePhotoUrl(customEvent.detail ?? null);
+    };
+    window.addEventListener("profile-photo-changed", onProfilePhotoChanged);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("profile-photo-changed", onProfilePhotoChanged);
+    };
+  }, []);
 
   if (!message) {
     return (
