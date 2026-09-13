@@ -1,4 +1,4 @@
-import type { Folder, MessageListItem } from "../mailTypes";
+import type { Folder, MessageListItem, NotificationState } from "../mailTypes";
 import { formatDate, senderInitial, senderLabel } from "../mailUtils";
 import { Icon } from "./Icon";
 
@@ -10,12 +10,41 @@ type MailListProps = {
   loading: boolean;
   search: string;
   unreadCount: number;
+  notificationState: NotificationState;
+  notificationsDisabled: boolean;
   onSearchChange: (value: string) => void;
   onRefresh: () => void;
   onOpenMessage: (id: string) => void;
+  onToggleNotifications: () => void;
 };
 
-export function MailList({ folder, folderLabel, messages, selectedId, loading, search, unreadCount, onSearchChange, onRefresh, onOpenMessage }: MailListProps) {
+function notificationLabel(state: NotificationState): string {
+  switch (state) {
+    case "on": return "Notifications on";
+    case "off": return "Enable notifications";
+    case "blocked": return "Notifications blocked";
+    case "unsupported": return "Notifications unavailable";
+    case "unconfigured": return "Notification setup needed";
+    case "working": return "Updating notifications";
+    default: return "Checking notifications";
+  }
+}
+
+export function MailList({
+  folder,
+  folderLabel,
+  messages,
+  selectedId,
+  loading,
+  search,
+  unreadCount,
+  notificationState,
+  notificationsDisabled,
+  onSearchChange,
+  onRefresh,
+  onOpenMessage,
+  onToggleNotifications,
+}: MailListProps) {
   return (
     <section className="mail-list-pane">
       <header className="mail-list-header">
@@ -23,7 +52,20 @@ export function MailList({ folder, folderLabel, messages, selectedId, loading, s
           <div className="eyebrow">{folder === "inbox" && unreadCount > 0 ? `${unreadCount} unread` : "Mailbox"}</div>
           <h1>{folderLabel}</h1>
         </div>
-        <button className="icon-button" type="button" aria-label="Refresh mailbox" onClick={onRefresh}><Icon name="refresh" size={17} /></button>
+        <div className="mail-list-header-actions">
+          <button
+            className={`icon-button mobile-notification-button notification-${notificationState}`}
+            type="button"
+            aria-label={notificationLabel(notificationState)}
+            title={notificationLabel(notificationState)}
+            disabled={notificationsDisabled}
+            onClick={onToggleNotifications}
+          >
+            <Icon name="bell" size={17} />
+            {notificationState === "on" ? <i className="mobile-notification-status" aria-hidden="true" /> : null}
+          </button>
+          <button className="icon-button" type="button" aria-label="Refresh mailbox" onClick={onRefresh}><Icon name="refresh" size={17} /></button>
+        </div>
       </header>
 
       <div className="search-wrap">
