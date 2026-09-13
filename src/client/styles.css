@@ -1,0 +1,129 @@
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #f4f5f7;
+  background: #0d0f12;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { min-width: 320px; min-height: 100%; margin: 0; }
+button, input { font: inherit; }
+button { color: inherit; }
+
+.mail-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 245px minmax(0, 1fr);
+  background: #0d0f12;
+}
+
+.sidebar {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 24px 16px;
+  background: #111318;
+  border-right: 1px solid #242830;
+}
+
+.brand { display: flex; align-items: center; gap: 12px; padding: 0 8px; }
+.brand-mark {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  background: #f3f4f6;
+  color: #111318;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: .04em;
+}
+.brand strong, .brand small { display: block; }
+.brand strong { font-size: 15px; }
+.brand small { margin-top: 2px; color: #8f96a3; font-size: 12px; }
+
+.compose-button {
+  width: 100%;
+  border: 0;
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: #f3f4f6;
+  color: #111318;
+  font-weight: 700;
+  text-align: left;
+}
+.compose-button:disabled { opacity: .85; cursor: not-allowed; }
+
+nav { display: grid; gap: 4px; }
+.folder {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 0;
+  border-radius: 9px;
+  padding: 10px 12px;
+  background: transparent;
+  color: #aab0ba;
+  text-align: left;
+}
+.folder.active { background: #20242b; color: #fff; }
+.folder-count { font-size: 12px; color: #858d99; }
+
+.sidebar-footer {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  color: #7f8793;
+  font-size: 12px;
+}
+.status-dot { width: 7px; height: 7px; border-radius: 50%; background: #777f8b; }
+.status-dot.online { background: #67c587; }
+.status-dot.offline { background: #d66a6a; }
+
+.mail-view { min-width: 0; display: flex; flex-direction: column; }
+.topbar {
+  min-height: 91px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 30px;
+  border-bottom: 1px solid #242830;
+}
+.topbar h1 { margin: 0; font-size: 21px; letter-spacing: -.02em; }
+.topbar p { margin: 5px 0 0; color: #838b97; font-size: 13px; }
+.private-badge { padding: 6px 9px; border: 1px solid #303641; border-radius: 999px; color: #9da5b1; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+
+.toolbar { display: flex; gap: 12px; padding: 14px 30px; border-bottom: 1px solid #20242a; }
+.toolbar button { border: 1px solid #2c313a; border-radius: 8px; background: #15181d; padding: 8px 11px; color: #7f8792; }
+.search-box { width: min(420px, 100%); display: flex; align-items: center; gap: 9px; margin-left: auto; padding: 0 12px; border: 1px solid #2c313a; border-radius: 8px; background: #15181d; color: #737b87; }
+.search-box input { width: 100%; border: 0; outline: 0; background: transparent; color: #cfd3d9; }
+
+.empty-state {
+  width: min(560px, calc(100% - 48px));
+  margin: auto;
+  padding: 80px 0;
+  text-align: center;
+}
+.mail-icon { width: 58px; height: 58px; display: grid; place-items: center; margin: 0 auto 20px; border: 1px solid #313640; border-radius: 16px; background: #15181d; color: #b8bec7; font-size: 24px; }
+.empty-state h2 { margin: 0; font-size: clamp(20px, 3vw, 26px); letter-spacing: -.03em; }
+.empty-state p { margin: 14px auto 20px; color: #858d99; line-height: 1.7; font-size: 14px; }
+.setup-chip { display: inline-block; padding: 6px 9px; border-radius: 999px; background: #191d23; color: #858d99; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+
+@media (max-width: 720px) {
+  .mail-shell { grid-template-columns: 1fr; }
+  .sidebar { min-height: auto; border-right: 0; border-bottom: 1px solid #242830; gap: 16px; padding: 16px; }
+  .sidebar nav { grid-template-columns: repeat(3, 1fr); }
+  .folder { justify-content: center; padding: 8px; font-size: 12px; }
+  .folder-count, .sidebar-footer { display: none; }
+  .compose-button { text-align: center; }
+  .topbar { min-height: 78px; padding: 16px 20px; }
+  .toolbar { padding: 12px 20px; }
+  .toolbar button { display: none; }
+  .search-box { margin-left: 0; }
+}
