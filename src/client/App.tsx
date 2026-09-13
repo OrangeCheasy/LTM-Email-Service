@@ -49,6 +49,7 @@ const folders: Array<{ key: Folder; label: string }> = [
 ];
 
 const emptyCompose: ComposeState = { to: "", cc: "", bcc: "", subject: "", text: "", replyToMessageId: "" };
+const AUTO_REFRESH_MS = 15_000;
 
 function formatDate(value: string): string {
   const date = new Date(value);
@@ -100,9 +101,12 @@ export function App() {
       .catch(() => setHealth("offline"));
   }, []);
 
-  const loadMessages = useCallback(async (activeFolder = folder, query = search) => {
-    setLoading(true);
-    setError(null);
+  const loadMessages = useCallback(async (activeFolder = folder, query = search, silent = false) => {
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
+
     try {
       const params = new URLSearchParams({ folder: activeFolder });
       if (query.trim()) params.set("q", query.trim());
@@ -112,15 +116,31 @@ export function App() {
       setMessages(data.messages);
       setUnreadCount(data.unreadCount);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Could not load mail");
+      if (!silent) setError(loadError instanceof Error ? loadError.message : "Could not load mail");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [folder, search]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadMessages(folder, search), search ? 250 : 0);
     return () => window.clearTimeout(timer);
+  }, [folder, search, loadMessages]);
+
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === "visible") void loadMessages(folder, search, true);
+    };
+
+    const interval = window.setInterval(refresh, AUTO_REFRESH_MS);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
   }, [folder, search, loadMessages]);
 
   const openMessage = async (id: string) => {
