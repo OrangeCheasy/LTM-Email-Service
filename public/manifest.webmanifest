@@ -1,0 +1,11 @@
+{
+  "name": "LTM Mail",
+  "short_name": "LTM Mail",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#111318",
+  "theme_color": "#111318",
+  "description": "Private webmail for contact@liamthemo.com"
+}
