@@ -8,6 +8,7 @@ import "./mockup.css";
 import "./phase1.css";
 import "./mockup-alignment.css";
 import "./logo-fix.css";
+import "./profile-preview.css";
 
 const root = document.getElementById("root");
 
