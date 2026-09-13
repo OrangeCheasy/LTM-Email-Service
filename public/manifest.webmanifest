@@ -5,7 +5,7 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#111318",
-  "theme_color": "#111318",
+  "background_color": "#f5f5f7",
+  "theme_color": "#f5f5f7",
   "description": "Private webmail for contact@liamthemo.com"
 }
