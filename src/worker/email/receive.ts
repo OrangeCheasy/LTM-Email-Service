@@ -73,7 +73,8 @@ export async function receiveEmail(
     ).bind(threadId, now.toISOString(), parsed.subject || "(no subject)"),
   ]);
 
-  if (env.FORWARD_TO.trim() && message.canBeForwarded) {
-    ctx.waitUntil(message.forward(env.FORWARD_TO.trim()));
+  const forwardTo = env.FORWARD_TO.trim();
+  if (forwardTo) {
+    ctx.waitUntil(message.forward(forwardTo));
   }
 }
