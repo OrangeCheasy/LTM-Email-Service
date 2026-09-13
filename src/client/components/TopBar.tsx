@@ -6,9 +6,11 @@ type TopBarProps = {
   search: string;
   notificationState: NotificationState;
   notificationsDisabled: boolean;
+  profilePhotoUrl: string | null;
   onSearchChange: (value: string) => void;
   onSearch: () => void;
   onToggleNotifications: () => void;
+  onOpenProfile: () => void;
 };
 
 function notificationLabel(state: NotificationState): string {
@@ -27,9 +29,11 @@ export function TopBar({
   search,
   notificationState,
   notificationsDisabled,
+  profilePhotoUrl,
   onSearchChange,
   onSearch,
   onToggleNotifications,
+  onOpenProfile,
 }: TopBarProps) {
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -70,10 +74,10 @@ export function TopBar({
           <Icon name="bell" size={19} />
           {notificationState === "on" ? <i className="topbar-notification-dot" aria-hidden="true" /> : null}
         </button>
-        <div className="topbar-profile" aria-label="Current mailbox">
-          <span className="topbar-profile-avatar">LM</span>
+        <button className="topbar-profile" type="button" aria-label="Open profile settings" onClick={onOpenProfile}>
+          <span className="topbar-profile-avatar">{profilePhotoUrl ? <img src={profilePhotoUrl} alt="" /> : "LM"}</span>
           <span><small>Private mailbox</small><strong>LTM</strong></span>
-        </div>
+        </button>
       </div>
     </header>
   );
