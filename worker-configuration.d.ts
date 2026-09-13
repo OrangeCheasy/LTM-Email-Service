@@ -3,20 +3,33 @@ interface EmailAddressInput {
   name?: string;
 }
 
+interface OutboundAttachmentInput {
+  content: string | ArrayBuffer | ArrayBufferView;
+  filename: string;
+  type: string;
+  disposition: "attachment" | "inline";
+  contentId?: string;
+}
+
 interface OutboundEmailInput {
-  from: EmailAddressInput;
+  from: EmailAddressInput | string;
   to: EmailAddressInput | EmailAddressInput[] | string | string[];
   subject: string;
   html?: string;
   text?: string;
-  cc?: EmailAddressInput[] | string[];
-  bcc?: EmailAddressInput[] | string[];
+  cc?: EmailAddressInput | EmailAddressInput[] | string | string[];
+  bcc?: EmailAddressInput | EmailAddressInput[] | string | string[];
   replyTo?: EmailAddressInput | string;
+  attachments?: OutboundAttachmentInput[];
   headers?: Record<string, string>;
 }
 
+interface EmailSendResult {
+  messageId: string;
+}
+
 interface EmailServiceBinding {
-  send(message: OutboundEmailInput): Promise<unknown>;
+  send(message: OutboundEmailInput): Promise<EmailSendResult>;
 }
 
 interface Env {
