@@ -9,6 +9,7 @@ import "./phase1.css";
 import "./mockup-alignment.css";
 import "./logo-fix.css";
 import "./profile-preview.css";
+import "./profile-crop.css";
 
 const root = document.getElementById("root");
 
