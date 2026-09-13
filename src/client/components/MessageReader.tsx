@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { MessageDetail } from "../mailTypes";
-import { formatBytes, formatFullDate, senderInitial, senderLabel } from "../mailUtils";
+import { formatBytes, formatFullDate, senderLabel } from "../mailUtils";
 import { AttachmentPreview } from "./AttachmentPreview";
 import { Icon } from "./Icon";
 
@@ -17,8 +17,18 @@ function messageSender(message: MessageDetail): string {
   return message.direction === "outbound" ? "You" : senderLabel(message);
 }
 
+function inboundAvatarInitials(message: MessageDetail): string {
+  const source = (message.fromName || message.fromAddress.split("@")[0] || message.fromAddress).trim();
+  const parts = source.split(/[\s._-]+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0]?.[0] ?? ""}${parts[parts.length - 1]?.[0] ?? ""}`.toUpperCase() || "?";
+  }
+  const compact = source.replace(/[^a-z0-9]/gi, "");
+  return compact.slice(0, 2).toUpperCase() || "?";
+}
+
 function messageAvatarLabel(message: MessageDetail): string {
-  return message.direction === "outbound" ? "LM" : senderInitial(message);
+  return message.direction === "outbound" ? "LM" : inboundAvatarInitials(message);
 }
 
 function messageSecondary(message: MessageDetail): string {
@@ -88,8 +98,10 @@ export function MessageReader({ message, thread, onBack, onReply, onForward, onP
           <section key={item.id} className={`conversation-message ${item.id === message.id ? "conversation-current" : ""}`}>
             <div className="message-heading">
               <div className="message-heading-meta">
-                <span className="sender-avatar reader-avatar" aria-hidden="true">
-                  {item.direction === "outbound" && profilePhotoUrl ? <img src={profilePhotoUrl} alt="" /> : messageAvatarLabel(item)}
+                <span className={`sender-avatar reader-avatar ${item.direction === "inbound" ? "reader-avatar-fallback" : ""}`} aria-hidden="true">
+                  {item.direction === "outbound" && profilePhotoUrl
+                    ? <img src={profilePhotoUrl} alt="" />
+                    : <span className="reader-avatar-initials">{messageAvatarLabel(item)}</span>}
                 </span>
                 <div>
                   <strong>{messageSender(item)}</strong>
