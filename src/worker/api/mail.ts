@@ -1,4 +1,5 @@
-type Folder = "inbox" | "starred" | "sent" | "archive" | "trash";
+type Folder = "inbox" | "starred" | "sent" | "drafts" | "archive" | "trash";
+type MessageFolder = Exclude<Folder, "drafts">;
 
 type MessageRow = {
   id: string;
@@ -26,24 +27,36 @@ type MessageRow = {
   delivery_error: string | null;
 };
 
+type DraftListRow = {
+  id: string;
+  thread_id: string | null;
+  to_addresses: string;
+  subject: string;
+  body_text: string;
+  updated_at: string;
+};
+
 type AttachmentRow = {
   id: string;
+  message_id: string;
   filename: string;
   content_type: string;
   size: number;
   r2_key: string;
 };
 
-const folderWhere: Record<Folder, string> = {
+const messageFolderWhere: Record<MessageFolder, string> = {
   inbox: "direction = 'inbound' AND is_archived = 0 AND is_deleted = 0",
   starred: "is_starred = 1 AND is_deleted = 0",
-  sent: "direction = 'outbound' AND is_deleted = 0",
+  sent: "direction = 'outbound' AND is_archived = 0 AND is_deleted = 0",
   archive: "is_archived = 1 AND is_deleted = 0",
   trash: "is_deleted = 1",
 };
 
+const folders = new Set<Folder>(["inbox", "starred", "sent", "drafts", "archive", "trash"]);
+
 function folderFrom(value: string | null): Folder {
-  return value && value in folderWhere ? (value as Folder) : "inbox";
+  return value && folders.has(value as Folder) ? (value as Folder) : "inbox";
 }
 
 function parseArray(value: string): string[] {
@@ -53,6 +66,10 @@ function parseArray(value: string): string[] {
   } catch {
     return [];
   }
+}
+
+function preview(value: string): string {
+  return value.replace(/\s+/g, " ").trim().slice(0, 240);
 }
 
 function toListItem(row: MessageRow) {
@@ -73,7 +90,40 @@ function toListItem(row: MessageRow) {
     isDeleted: Boolean(row.is_deleted),
     hasAttachments: Boolean(row.has_attachments),
     deliveryStatus: row.delivery_status,
+    isDraft: false,
   };
+}
+
+function toDraftListItem(row: DraftListRow, primaryAddress: string) {
+  return {
+    id: row.id,
+    threadId: row.thread_id ?? row.id,
+    direction: "outbound" as const,
+    fromAddress: primaryAddress,
+    fromName: "You",
+    toAddresses: parseArray(row.to_addresses),
+    subject: row.subject,
+    preview: preview(row.body_text),
+    receivedAt: row.updated_at,
+    sentAt: null,
+    isRead: true,
+    isStarred: false,
+    isArchived: false,
+    isDeleted: false,
+    hasAttachments: false,
+    deliveryStatus: "draft",
+    isDraft: true,
+  };
+}
+
+async function mailboxCounts(env: Env): Promise<{ unreadCount: number; draftCount: number }> {
+  const [unread, drafts] = await Promise.all([
+    env.DB.prepare(
+      "SELECT COUNT(*) AS count FROM messages WHERE direction = 'inbound' AND is_archived = 0 AND is_deleted = 0 AND is_read = 0",
+    ).first<{ count: number }>(),
+    env.DB.prepare("SELECT COUNT(*) AS count FROM drafts").first<{ count: number }>(),
+  ]);
+  return { unreadCount: unread?.count ?? 0, draftCount: drafts?.count ?? 0 };
 }
 
 export async function listMessages(request: Request, env: Env): Promise<Response> {
@@ -82,8 +132,30 @@ export async function listMessages(request: Request, env: Env): Promise<Response
   const search = (url.searchParams.get("q") ?? "").trim().toLowerCase().slice(0, 200);
   const requestedLimit = Number(url.searchParams.get("limit") ?? 50);
   const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(100, Math.floor(requestedLimit))) : 50;
+  const counts = await mailboxCounts(env);
 
-  let where = folderWhere[folder];
+  if (folder === "drafts") {
+    let where = "1 = 1";
+    const bindings: Array<string | number> = [];
+    if (search) {
+      where += " AND (LOWER(subject) LIKE ? OR LOWER(body_text) LIKE ? OR LOWER(to_addresses) LIKE ?)";
+      const term = `%${search}%`;
+      bindings.push(term, term, term);
+    }
+    bindings.push(limit);
+
+    const result = await env.DB.prepare(
+      `SELECT id, thread_id, to_addresses, subject, body_text, updated_at
+         FROM drafts
+        WHERE ${where}
+        ORDER BY updated_at DESC
+        LIMIT ?`,
+    ).bind(...bindings).all<DraftListRow>();
+
+    return Response.json({ folder, ...counts, messages: result.results.map((row) => toDraftListItem(row, env.PRIMARY_ADDRESS)) });
+  }
+
+  let where = messageFolderWhere[folder];
   const bindings: Array<string | number> = [];
   if (search) {
     where += " AND (LOWER(subject) LIKE ? OR LOWER(from_address) LIKE ? OR LOWER(COALESCE(from_name, '')) LIKE ? OR LOWER(preview) LIKE ?)";
@@ -102,11 +174,26 @@ export async function listMessages(request: Request, env: Env): Promise<Response
       LIMIT ?`,
   ).bind(...bindings).all<MessageRow>();
 
-  const unread = await env.DB.prepare(
-    "SELECT COUNT(*) AS count FROM messages WHERE direction = 'inbound' AND is_archived = 0 AND is_deleted = 0 AND is_read = 0",
-  ).first<{ count: number }>();
+  return Response.json({ folder, ...counts, messages: result.results.map(toListItem) });
+}
 
-  return Response.json({ folder, unreadCount: unread?.count ?? 0, messages: result.results.map(toListItem) });
+function detailFrom(row: MessageRow, attachments: AttachmentRow[]) {
+  return {
+    ...toListItem(row),
+    ccAddresses: parseArray(row.cc_addresses),
+    bccAddresses: parseArray(row.bcc_addresses),
+    bodyText: row.body_text ?? row.preview,
+    bodyHtmlAvailable: Boolean(row.body_html),
+    inReplyTo: row.in_reply_to,
+    references: row.reference_ids,
+    deliveryError: row.delivery_error,
+    attachments: attachments.map((attachment) => ({
+      id: attachment.id,
+      filename: attachment.filename,
+      contentType: attachment.content_type,
+      size: attachment.size,
+    })),
+  };
 }
 
 export async function getMessage(id: string, env: Env): Promise<Response> {
@@ -119,33 +206,51 @@ export async function getMessage(id: string, env: Env): Promise<Response> {
 
   if (!row) return Response.json({ error: "Message not found" }, { status: 404 });
 
-  if (!row.is_read) {
-    await env.DB.prepare("UPDATE messages SET is_read = 1 WHERE id = ?1").bind(id).run();
-    row.is_read = 1;
+  const unread = await env.DB.prepare(
+    "SELECT COUNT(*) AS count FROM messages WHERE thread_id = ?1 AND direction = 'inbound' AND is_read = 0",
+  ).bind(row.thread_id).first<{ count: number }>();
+  const newlyReadCount = unread?.count ?? 0;
+
+  if (newlyReadCount > 0) {
+    await env.DB.prepare("UPDATE messages SET is_read = 1 WHERE thread_id = ?1 AND direction = 'inbound' AND is_read = 0")
+      .bind(row.thread_id)
+      .run();
+    await env.DB.prepare("UPDATE threads SET is_read = 1 WHERE id = ?1").bind(row.thread_id).run();
   }
 
-  const attachments = await env.DB.prepare(
-    "SELECT id, filename, content_type, size, r2_key FROM attachments WHERE message_id = ?1 ORDER BY created_at ASC",
-  ).bind(id).all<AttachmentRow>();
+  const threadResult = await env.DB.prepare(
+    `SELECT id, thread_id, direction, from_address, from_name, to_addresses, cc_addresses, bcc_addresses,
+            subject, preview, body_text, body_html, received_at, sent_at, is_read, is_starred, is_archived,
+            is_deleted, has_attachments, in_reply_to, reference_ids, delivery_status, delivery_error
+       FROM messages
+      WHERE thread_id = ?1
+      ORDER BY COALESCE(sent_at, received_at) ASC
+      LIMIT 100`,
+  ).bind(row.thread_id).all<MessageRow>();
 
-  return Response.json({
-    message: {
-      ...toListItem(row),
-      ccAddresses: parseArray(row.cc_addresses),
-      bccAddresses: parseArray(row.bcc_addresses),
-      bodyText: row.body_text ?? row.preview,
-      bodyHtmlAvailable: Boolean(row.body_html),
-      inReplyTo: row.in_reply_to,
-      references: row.reference_ids,
-      deliveryError: row.delivery_error,
-      attachments: attachments.results.map((attachment) => ({
-        id: attachment.id,
-        filename: attachment.filename,
-        contentType: attachment.content_type,
-        size: attachment.size,
-      })),
-    },
-  });
+  const messageIds = threadResult.results.map((item) => item.id);
+  const attachmentMap = new Map<string, AttachmentRow[]>();
+  if (messageIds.length > 0) {
+    const placeholders = messageIds.map(() => "?").join(",");
+    const attachments = await env.DB.prepare(
+      `SELECT id, message_id, filename, content_type, size, r2_key
+         FROM attachments
+        WHERE message_id IN (${placeholders})
+        ORDER BY created_at ASC`,
+    ).bind(...messageIds).all<AttachmentRow>();
+
+    for (const attachment of attachments.results) {
+      const current = attachmentMap.get(attachment.message_id) ?? [];
+      current.push(attachment);
+      attachmentMap.set(attachment.message_id, current);
+    }
+  }
+
+  const thread = threadResult.results.map((item) => detailFrom(item, attachmentMap.get(item.id) ?? []));
+  const message = thread.find((item) => item.id === id);
+  if (!message) return Response.json({ error: "Message not found" }, { status: 404 });
+
+  return Response.json({ message, thread, newlyReadCount });
 }
 
 export async function patchMessage(request: Request, id: string, env: Env): Promise<Response> {
@@ -184,18 +289,19 @@ export async function patchMessage(request: Request, id: string, env: Env): Prom
 
 export async function downloadAttachment(id: string, env: Env): Promise<Response> {
   const attachment = await env.DB.prepare(
-    "SELECT id, filename, content_type, size, r2_key FROM attachments WHERE id = ?1",
+    "SELECT id, message_id, filename, content_type, size, r2_key FROM attachments WHERE id = ?1",
   ).bind(id).first<AttachmentRow>();
   if (!attachment) return Response.json({ error: "Attachment not found" }, { status: 404 });
 
   const object = await env.MAIL.get(attachment.r2_key);
   if (!object) return Response.json({ error: "Attachment data is unavailable" }, { status: 404 });
 
+  const disposition = attachment.content_type.startsWith("image/") ? "inline" : "attachment";
   return new Response(object.body, {
     headers: {
       "Content-Type": attachment.content_type || "application/octet-stream",
       "Content-Length": String(attachment.size),
-      "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(attachment.filename)}`,
+      "Content-Disposition": `${disposition}; filename*=UTF-8''${encodeURIComponent(attachment.filename)}`,
       "Cache-Control": "private, no-store",
       "X-Content-Type-Options": "nosniff",
     },
