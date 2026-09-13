@@ -1,3 +1,4 @@
+import { previewAttachment } from "./api/attachments";
 import { deleteDraft, getDraft, saveDraft } from "./api/drafts";
 import { healthResponse } from "./api/health";
 import { downloadAttachment, getMessage, listMessages, patchMessage } from "./api/mail";
@@ -45,8 +46,11 @@ export default {
       return jsonError("Method not allowed", 405);
     }
 
+    const previewMatch = url.pathname.match(/^\/api\/attachment-previews\/([^/]+)$/);
+    if (previewMatch && request.method === "GET") return previewAttachment(decodeURIComponent(previewMatch[1]), env);
+
     const attachmentMatch = url.pathname.match(/^\/api\/attachments\/([^/]+)$/);
-    if (attachmentMatch && request.method === "GET") return downloadAttachment(request, decodeURIComponent(attachmentMatch[1]), env);
+    if (attachmentMatch && request.method === "GET") return downloadAttachment(decodeURIComponent(attachmentMatch[1]), env);
 
     if (url.pathname.startsWith("/api/")) return jsonError("Not found", 404);
     return env.ASSETS.fetch(request);
