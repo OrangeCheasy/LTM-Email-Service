@@ -6,6 +6,7 @@ import "./dark.css";
 import "./mobile-notifications.css";
 import "./mockup.css";
 import "./phase1.css";
+import "./mockup-alignment.css";
 
 const root = document.getElementById("root");
 
