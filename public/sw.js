@@ -6,7 +6,7 @@ self.addEventListener("push", (event) => {
     payload = { body: event.data ? event.data.text() : "New email received" };
   }
 
-  const title = payload.title || "LTM Mail";
+  const title = payload.title || "LTM Mails";
   const options = {
     body: payload.body || "New email received",
     tag: payload.tag || "ltm-mail-new-message",
