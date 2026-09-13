@@ -39,8 +39,8 @@ export function TopBar({
   return (
     <header className="desktop-topbar">
       <div className="topbar-brand">
-        <span className="topbar-logo" aria-hidden="true"><Icon name="mail" size={20} /></span>
-        <strong>LTM Mails</strong>
+        <span className="topbar-logo" aria-hidden="true"><Icon name="mail" size={18} /></span>
+        <strong className="topbar-brand-title">LTM Mails</strong>
         <span className="topbar-brand-divider" aria-hidden="true" />
         <span className="topbar-context">Private • Personal</span>
       </div>

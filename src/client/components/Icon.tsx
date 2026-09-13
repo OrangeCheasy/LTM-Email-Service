@@ -8,7 +8,7 @@ type IconProps = {
 };
 
 const paths: Record<IconName, ReactNode> = {
-  mail: <><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><path d="m5.5 7 6.5 5 6.5-5"/><path d="m5.5 17 4.4-4M18.5 17l-4.4-4"/></>,
+  mail: <><rect x="3.75" y="6.25" width="16.5" height="11.5" rx="2.15"/><path d="M4.85 7.65 12 12.7l7.15-5.05"/></>,
   inbox: <><path d="M4 5.5h16l1.5 9.5v3.5A1.5 1.5 0 0 1 20 20H4a1.5 1.5 0 0 1-1.5-1.5V15L4 5.5Z"/><path d="M3 15h5l1.5 2h5L16 15h5"/></>,
   star: <path d="m12 3 2.8 5.67 6.2.9-4.5 4.39 1.06 6.2L12 17.24l-5.56 2.92 1.06-6.2L3 9.57l6.2-.9L12 3Z"/>,
   send: <><path d="m21 3-7.2 18-3.3-7.5L3 10.2 21 3Z"/><path d="M10.5 13.5 21 3"/></>,
