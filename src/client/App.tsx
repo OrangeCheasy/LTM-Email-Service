@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 type HealthState = "checking" | "online" | "offline";
 type Folder = "inbox" | "starred" | "sent" | "archive" | "trash";
+type NotificationState = "checking" | "off" | "on" | "blocked" | "unsupported" | "unconfigured" | "working";
 
 type MessageListItem = {
   id: string;
@@ -78,6 +79,25 @@ function replySubject(subject: string): string {
   return /^re:/i.test(subject) ? subject : `Re: ${subject}`;
 }
 
+function base64UrlToUint8Array(value: string): Uint8Array {
+  const padding = "=".repeat((4 - (value.length % 4)) % 4);
+  const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64);
+  return Uint8Array.from(raw, (character) => character.charCodeAt(0));
+}
+
+function notificationLabel(state: NotificationState): string {
+  switch (state) {
+    case "on": return "Notifications on";
+    case "off": return "Enable notifications";
+    case "blocked": return "Notifications blocked";
+    case "unsupported": return "Notifications unavailable";
+    case "unconfigured": return "Notifications setup needed";
+    case "working": return "Updating notifications…";
+    default: return "Checking notifications…";
+  }
+}
+
 export function App() {
   const [health, setHealth] = useState<HealthState>("checking");
   const [folder, setFolder] = useState<Folder>("inbox");
@@ -91,6 +111,8 @@ export function App() {
   const [compose, setCompose] = useState<ComposeState>(emptyCompose);
   const [files, setFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
+  const [notificationState, setNotificationState] = useState<NotificationState>("checking");
+  const [pushPublicKey, setPushPublicKey] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/health")
@@ -99,6 +121,39 @@ export function App() {
         setHealth("online");
       })
       .catch(() => setHealth("offline"));
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const initializePush = async () => {
+      if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+        if (!cancelled) setNotificationState("unsupported");
+        return;
+      }
+
+      try {
+        const configResponse = await fetch("/api/push/config", { cache: "no-store" });
+        if (!configResponse.ok) throw new Error("Could not load notification configuration");
+        const config = await configResponse.json() as { configured: boolean; publicKey: string | null };
+        if (!config.configured || !config.publicKey) {
+          if (!cancelled) setNotificationState("unconfigured");
+          return;
+        }
+
+        setPushPublicKey(config.publicKey);
+        const registration = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+        const subscription = await registration.pushManager.getSubscription();
+        if (cancelled) return;
+        if (Notification.permission === "denied") setNotificationState("blocked");
+        else setNotificationState(subscription ? "on" : "off");
+      } catch {
+        if (!cancelled) setNotificationState("unsupported");
+      }
+    };
+
+    void initializePush();
+    return () => { cancelled = true; };
   }, []);
 
   const loadMessages = useCallback(async (activeFolder = folder, query = search, silent = false) => {
@@ -142,6 +197,54 @@ export function App() {
       document.removeEventListener("visibilitychange", refresh);
     };
   }, [folder, search, loadMessages]);
+
+  const toggleNotifications = async () => {
+    if (!pushPublicKey || notificationState === "blocked" || notificationState === "unsupported" || notificationState === "unconfigured" || notificationState === "checking" || notificationState === "working") return;
+    setNotificationState("working");
+    setError(null);
+
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const existing = await registration.pushManager.getSubscription();
+
+      if (existing) {
+        await fetch("/api/push/unsubscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: existing.endpoint }),
+        });
+        await existing.unsubscribe();
+        setNotificationState("off");
+        return;
+      }
+
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") {
+        setNotificationState(permission === "denied" ? "blocked" : "off");
+        return;
+      }
+
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: base64UrlToUint8Array(pushPublicKey),
+      });
+
+      const response = await fetch("/api/push/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(subscription.toJSON()),
+      });
+      if (!response.ok) {
+        await subscription.unsubscribe();
+        throw new Error("Could not save notification subscription");
+      }
+
+      setNotificationState("on");
+    } catch (notificationError) {
+      setNotificationState("off");
+      setError(notificationError instanceof Error ? notificationError.message : "Could not update notifications");
+    }
+  };
 
   const openMessage = async (id: string) => {
     setError(null);
@@ -218,6 +321,7 @@ export function App() {
   };
 
   const currentFolderLabel = useMemo(() => folders.find((item) => item.key === folder)?.label ?? "Mail", [folder]);
+  const notificationsDisabled = ["checking", "working", "blocked", "unsupported", "unconfigured"].includes(notificationState);
 
   return (
     <main className="mail-shell">
@@ -235,6 +339,9 @@ export function App() {
             </button>
           ))}
         </nav>
+        <button className="folder" type="button" disabled={notificationsDisabled} onClick={() => void toggleNotifications()}>
+          <span>{notificationState === "on" ? "●" : "○"} {notificationLabel(notificationState)}</span>
+        </button>
         <div className="sidebar-footer">
           <span className={`status-dot ${health}`} />
           <span>{health === "checking" ? "Checking Worker" : health === "online" ? "Worker online" : "Worker unavailable"}</span>
