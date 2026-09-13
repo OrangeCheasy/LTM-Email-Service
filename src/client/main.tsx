@@ -5,6 +5,7 @@ import "./styles.css";
 import "./dark.css";
 import "./mobile-notifications.css";
 import "./mockup.css";
+import "./phase1.css";
 
 const root = document.getElementById("root");
 
