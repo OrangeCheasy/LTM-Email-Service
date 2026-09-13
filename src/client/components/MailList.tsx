@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import type { Folder, MessageListItem, NotificationState } from "../mailTypes";
 import { formatDate, senderInitial, senderLabel } from "../mailUtils";
 import { Icon } from "./Icon";
+import { TopBar } from "./TopBar";
 
 type MailListProps = {
   folder: Folder;
@@ -74,6 +75,15 @@ export function MailList({
 
   return (
     <section className="mail-list-pane">
+      <TopBar
+        search={search}
+        notificationState={notificationState}
+        notificationsDisabled={notificationsDisabled}
+        onSearchChange={onSearchChange}
+        onSearch={onRefresh}
+        onToggleNotifications={onToggleNotifications}
+      />
+
       <header className="mail-list-header">
         <div>
           <div className="eyebrow">{folder === "inbox" && unreadCount > 0 ? `${unreadCount} unread` : "Mailbox"}</div>
