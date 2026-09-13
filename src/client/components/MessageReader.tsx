@@ -1,8 +1,9 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useState } from "react";
 import type { MessageDetail } from "../mailTypes";
 import { formatBytes, formatFullDate, senderLabel } from "../mailUtils";
 import { AttachmentPreview } from "./AttachmentPreview";
 import { Icon } from "./Icon";
+import { SenderAvatar } from "./SenderAvatar";
 
 type MessageReaderProps = {
   message: MessageDetail | null;
@@ -13,43 +14,8 @@ type MessageReaderProps = {
   onPatch: (patch: Record<string, boolean>, closeAfter?: boolean) => void;
 };
 
-const AVATAR_TONES = [
-  { background: "linear-gradient(145deg, #4c2d1c, #2a1d16)", color: "#ffc291", border: "rgba(255, 138, 61, .28)" },
-  { background: "linear-gradient(145deg, #3b3024, #211c18)", color: "#e4c69d", border: "rgba(215, 177, 122, .22)" },
-  { background: "linear-gradient(145deg, #35283f, #211b27)", color: "#d6b7e6", border: "rgba(185, 137, 208, .22)" },
-  { background: "linear-gradient(145deg, #283a32, #19251f)", color: "#b8d8c7", border: "rgba(126, 188, 154, .22)" },
-  { background: "linear-gradient(145deg, #342b2a, #211c1b)", color: "#dfc0b8", border: "rgba(201, 151, 137, .2)" },
-];
-
 function messageSender(message: MessageDetail): string {
   return message.direction === "outbound" ? "You" : senderLabel(message);
-}
-
-function inboundAvatarInitials(message: MessageDetail): string {
-  const source = (message.fromName || message.fromAddress.split("@")[0] || message.fromAddress).trim();
-  const parts = source.split(/[\s._-]+/).filter(Boolean);
-  if (parts.length >= 2) {
-    return `${parts[0]?.[0] ?? ""}${parts[parts.length - 1]?.[0] ?? ""}`.toUpperCase() || "?";
-  }
-  const compact = source.replace(/[^a-z0-9]/gi, "");
-  return compact.slice(0, 2).toUpperCase() || "?";
-}
-
-function messageAvatarLabel(message: MessageDetail): string {
-  return message.direction === "outbound" ? "LM" : inboundAvatarInitials(message);
-}
-
-function inboundAvatarStyle(message: MessageDetail): CSSProperties | undefined {
-  if (message.direction !== "inbound") return undefined;
-  const key = (message.fromAddress || message.fromName || "?").toLowerCase();
-  let hash = 0;
-  for (let index = 0; index < key.length; index += 1) hash = ((hash << 5) - hash + key.charCodeAt(index)) | 0;
-  const tone = AVATAR_TONES[Math.abs(hash) % AVATAR_TONES.length];
-  return {
-    background: tone.background,
-    color: tone.color,
-    borderColor: tone.border,
-  };
 }
 
 function messageSecondary(message: MessageDetail): string {
@@ -60,32 +26,6 @@ function messageSecondary(message: MessageDetail): string {
 
 export function MessageReader({ message, thread, onBack, onReply, onForward, onPatch }: MessageReaderProps) {
   const [previewAttachment, setPreviewAttachment] = useState<MessageDetail["attachments"][number] | null>(null);
-  const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void fetch("/api/profile", { cache: "no-store" })
-      .then(async (response) => {
-        if (!response.ok) return null;
-        return response.json() as Promise<{ hasPhoto: boolean; version: string | null }>;
-      })
-      .then((profile) => {
-        if (!cancelled && profile?.hasPhoto) {
-          setProfilePhotoUrl(`/api/profile/photo?v=${encodeURIComponent(profile.version ?? "1")}`);
-        }
-      })
-      .catch(() => undefined);
-
-    const onProfilePhotoChanged = (event: Event) => {
-      const customEvent = event as CustomEvent<string | null>;
-      setProfilePhotoUrl(customEvent.detail ?? null);
-    };
-    window.addEventListener("profile-photo-changed", onProfilePhotoChanged);
-    return () => {
-      cancelled = true;
-      window.removeEventListener("profile-photo-changed", onProfilePhotoChanged);
-    };
-  }, []);
 
   if (!message) {
     return (
@@ -119,15 +59,7 @@ export function MessageReader({ message, thread, onBack, onReply, onForward, onP
           <section key={item.id} className={`conversation-message ${item.id === message.id ? "conversation-current" : ""}`}>
             <div className="message-heading">
               <div className="message-heading-meta">
-                <span
-                  className={`sender-avatar reader-avatar ${item.direction === "inbound" ? "reader-avatar-fallback" : ""}`}
-                  style={inboundAvatarStyle(item)}
-                  aria-hidden="true"
-                >
-                  {item.direction === "outbound" && profilePhotoUrl
-                    ? <img src={profilePhotoUrl} alt="" />
-                    : <span className="reader-avatar-initials">{messageAvatarLabel(item)}</span>}
-                </span>
+                <SenderAvatar message={item} />
                 <div>
                   <strong>{messageSender(item)}</strong>
                   <span>{messageSecondary(item)}</span>
