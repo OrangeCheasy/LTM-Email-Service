@@ -1,0 +1,42 @@
+.mail-list-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mobile-notification-button {
+  position: relative;
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .mobile-notification-button {
+    display: grid;
+  }
+
+  .mobile-notification-button.notification-on {
+    border-color: #665378;
+    background: #4b396f;
+    color: #eee7f4;
+  }
+
+  .mobile-notification-button.notification-off {
+    color: #b6a2c9;
+  }
+
+  .mobile-notification-button:disabled {
+    opacity: .45;
+    cursor: default;
+  }
+
+  .mobile-notification-status {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #d5c4e2;
+    box-shadow: 0 0 0 2px #4b396f;
+  }
+}
