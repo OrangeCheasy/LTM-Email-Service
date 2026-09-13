@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 type IconName = "inbox" | "star" | "send" | "archive" | "trash" | "search" | "compose" | "reply" | "back" | "refresh" | "paperclip" | "bell" | "lock" | "more";
 
 type IconProps = {
@@ -5,7 +7,7 @@ type IconProps = {
   size?: number;
 };
 
-const paths: Record<IconName, JSX.Element> = {
+const paths: Record<IconName, ReactNode> = {
   inbox: <><path d="M4 5.5h16l1.5 9.5v3.5A1.5 1.5 0 0 1 20 20H4a1.5 1.5 0 0 1-1.5-1.5V15L4 5.5Z"/><path d="M3 15h5l1.5 2h5L16 15h5"/></>,
   star: <path d="m12 3 2.8 5.67 6.2.9-4.5 4.39 1.06 6.2L12 17.24l-5.56 2.92 1.06-6.2L3 9.57l6.2-.9L12 3Z"/>,
   send: <><path d="m21 3-7.2 18-3.3-7.5L3 10.2 21 3Z"/><path d="M10.5 13.5 21 3"/></>,
