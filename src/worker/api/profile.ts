@@ -31,7 +31,8 @@ export async function saveProfilePhoto(request: Request, env: Env): Promise<Resp
   if (photo.size <= 0 || photo.size > MAX_PROFILE_BYTES) return Response.json({ error: "Profile photo must be 5 MB or smaller" }, { status: 413 });
 
   const uploadedAt = new Date().toISOString();
-  await env.MAIL.put(PROFILE_KEY, photo.stream(), {
+  const bytes = await photo.arrayBuffer();
+  await env.MAIL.put(PROFILE_KEY, bytes, {
     httpMetadata: { contentType: photo.type },
     customMetadata: { uploadedAt },
   });
