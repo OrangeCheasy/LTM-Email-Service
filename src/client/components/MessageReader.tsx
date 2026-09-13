@@ -37,7 +37,6 @@ export function MessageReader({ message, onBack, onReply, onPatch }: MessageRead
         </div>
         <div className="reader-actions">
           <button className={message.isStarred ? "active-star" : ""} type="button" onClick={() => onPatch({ isStarred: !message.isStarred })}><Icon name="star" size={16} /><span>{message.isStarred ? "Unstar" : "Star"}</span></button>
-          <button type="button" aria-label="More actions"><Icon name="more" size={17} /></button>
         </div>
       </header>
 
