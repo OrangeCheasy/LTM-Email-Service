@@ -1,6 +1,7 @@
 import { deleteDraft, getDraft, saveDraft } from "./api/drafts";
 import { healthResponse } from "./api/health";
 import { downloadAttachment, getMessage, listMessages, patchMessage } from "./api/mail";
+import { deleteProfilePhoto, getProfile, getProfilePhoto, saveProfilePhoto } from "./api/profile";
 import { receiveEmail } from "./email/receive";
 import { sendEmail } from "./email/send";
 import { pushConfig, subscribePush, unsubscribePush } from "./push";
@@ -17,6 +18,13 @@ export default {
     if (url.pathname === "/api/messages" && request.method === "GET") return listMessages(request, env);
     if (url.pathname === "/api/send" && request.method === "POST") return sendEmail(request, env);
     if (url.pathname === "/api/drafts" && request.method === "POST") return saveDraft(request, env);
+    if (url.pathname === "/api/profile" && request.method === "GET") return getProfile(env);
+    if (url.pathname === "/api/profile/photo") {
+      if (request.method === "GET") return getProfilePhoto(env);
+      if (request.method === "PUT") return saveProfilePhoto(request, env);
+      if (request.method === "DELETE") return deleteProfilePhoto(env);
+      return jsonError("Method not allowed", 405);
+    }
     if (url.pathname === "/api/push/config" && request.method === "GET") return pushConfig(env);
     if (url.pathname === "/api/push/subscribe" && request.method === "POST") return subscribePush(request, env);
     if (url.pathname === "/api/push/unsubscribe" && request.method === "POST") return unsubscribePush(request, env);
@@ -38,7 +46,7 @@ export default {
     }
 
     const attachmentMatch = url.pathname.match(/^\/api\/attachments\/([^/]+)$/);
-    if (attachmentMatch && request.method === "GET") return downloadAttachment(decodeURIComponent(attachmentMatch[1]), env);
+    if (attachmentMatch && request.method === "GET") return downloadAttachment(request, decodeURIComponent(attachmentMatch[1]), env);
 
     if (url.pathname.startsWith("/api/")) return jsonError("Not found", 404);
     return env.ASSETS.fetch(request);
