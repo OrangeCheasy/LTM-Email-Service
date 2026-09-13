@@ -1,10 +1,9 @@
 import type { FormEvent } from "react";
-import type { HealthState, NotificationState } from "../mailTypes";
+import type { NotificationState } from "../mailTypes";
 import { Icon } from "./Icon";
 
 type TopBarProps = {
   search: string;
-  health: HealthState;
   notificationState: NotificationState;
   notificationsDisabled: boolean;
   onSearchChange: (value: string) => void;
@@ -26,7 +25,6 @@ function notificationLabel(state: NotificationState): string {
 
 export function TopBar({
   search,
-  health,
   notificationState,
   notificationsDisabled,
   onSearchChange,
@@ -56,14 +54,11 @@ export function TopBar({
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
         />
-        {search ? (
-          <button className="topbar-search-clear" type="button" aria-label="Clear search" onClick={() => onSearchChange("")}>×</button>
-        ) : null}
+        {search ? <button className="topbar-search-clear" type="button" aria-label="Clear search" onClick={() => onSearchChange("")}>×</button> : null}
         <button className="topbar-search-submit" type="submit"><Icon name="search" size={14} />Search</button>
       </form>
 
       <div className="topbar-status">
-        <span className="system-status"><i className={`status-dot ${health}`} />{health === "online" ? "All systems good" : health === "checking" ? "Connecting" : "Offline"}</span>
         <button
           className={`topbar-icon-button notification-${notificationState}`}
           type="button"
@@ -77,7 +72,7 @@ export function TopBar({
         </button>
         <div className="topbar-profile" aria-label="Current mailbox">
           <span className="topbar-profile-avatar">LM</span>
-          <span><small>Good evening,</small><strong>LTM</strong></span>
+          <span><small>Private mailbox</small><strong>LTM</strong></span>
         </div>
       </div>
     </header>
