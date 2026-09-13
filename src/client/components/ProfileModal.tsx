@@ -6,7 +6,6 @@ type ProfileModalProps = {
   photoUrl: string | null;
   onClose: () => void;
   onPhotoChange: (url: string | null) => void;
-  onError: (message: string) => void;
 };
 
 async function normalizeProfilePhoto(file: File): Promise<Blob> {
@@ -42,11 +41,17 @@ async function normalizeProfilePhoto(file: File): Promise<Blob> {
   }
 }
 
-export function ProfileModal({ open, photoUrl, onClose, onPhotoChange, onError }: ProfileModalProps) {
+export function ProfileModal({ open, photoUrl, onClose, onPhotoChange }: ProfileModalProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (!open) return null;
+
+  const announcePhotoChange = (url: string | null) => {
+    onPhotoChange(url);
+    window.dispatchEvent(new CustomEvent("profile-photo-changed", { detail: url }));
+  };
 
   const uploadPhoto = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -54,6 +59,7 @@ export function ProfileModal({ open, photoUrl, onClose, onPhotoChange, onError }
     if (!file) return;
 
     setBusy(true);
+    setError(null);
     try {
       const normalized = await normalizeProfilePhoto(file);
       const form = new FormData();
@@ -61,9 +67,9 @@ export function ProfileModal({ open, photoUrl, onClose, onPhotoChange, onError }
       const response = await fetch("/api/profile/photo", { method: "PUT", body: form });
       const data = await response.json().catch(() => ({})) as { error?: string; version?: string };
       if (!response.ok) throw new Error(data.error ?? "Could not save profile photo");
-      onPhotoChange(`/api/profile/photo?v=${encodeURIComponent(data.version ?? String(Date.now()))}`);
-    } catch (error) {
-      onError(error instanceof Error ? error.message : "Could not save profile photo");
+      announcePhotoChange(`/api/profile/photo?v=${encodeURIComponent(data.version ?? String(Date.now()))}`);
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : "Could not save profile photo");
     } finally {
       setBusy(false);
     }
@@ -71,12 +77,13 @@ export function ProfileModal({ open, photoUrl, onClose, onPhotoChange, onError }
 
   const removePhoto = async () => {
     setBusy(true);
+    setError(null);
     try {
       const response = await fetch("/api/profile/photo", { method: "DELETE" });
       if (!response.ok) throw new Error("Could not remove profile photo");
-      onPhotoChange(null);
-    } catch (error) {
-      onError(error instanceof Error ? error.message : "Could not remove profile photo");
+      announcePhotoChange(null);
+    } catch (removeError) {
+      setError(removeError instanceof Error ? removeError.message : "Could not remove profile photo");
     } finally {
       setBusy(false);
     }
@@ -112,6 +119,7 @@ export function ProfileModal({ open, photoUrl, onClose, onPhotoChange, onError }
         </div>
 
         <input ref={inputRef} className="profile-photo-input" type="file" accept="image/*" onChange={(event) => void uploadPhoto(event)} />
+        {error ? <div className="profile-modal-error" role="alert">{error}</div> : null}
         <div className="profile-modal-note"><Icon name="lock" size={14} /><span>Your profile photo is stored privately in your existing mail storage.</span></div>
       </section>
     </div>
