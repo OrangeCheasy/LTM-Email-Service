@@ -1,10 +1,13 @@
+import { useState } from "react";
 import type { MessageDetail } from "../mailTypes";
 import { formatBytes, formatFullDate, senderInitial, senderLabel } from "../mailUtils";
+import { AttachmentPreview } from "./AttachmentPreview";
 import { Icon } from "./Icon";
 
 type MessageReaderProps = {
   message: MessageDetail | null;
   thread: MessageDetail[];
+  profilePhotoUrl: string | null;
   onBack: () => void;
   onReply: () => void;
   onForward: () => void;
@@ -25,7 +28,9 @@ function messageSecondary(message: MessageDetail): string {
     : message.fromName ? message.fromAddress : `to ${message.toAddresses.join(", ") || "you"}`;
 }
 
-export function MessageReader({ message, thread, onBack, onReply, onForward, onPatch }: MessageReaderProps) {
+export function MessageReader({ message, thread, profilePhotoUrl, onBack, onReply, onForward, onPatch }: MessageReaderProps) {
+  const [previewAttachment, setPreviewAttachment] = useState<MessageDetail["attachments"][number] | null>(null);
+
   if (!message) {
     return (
       <section className="reader-pane reader-empty">
@@ -58,7 +63,9 @@ export function MessageReader({ message, thread, onBack, onReply, onForward, onP
           <section key={item.id} className={`conversation-message ${item.id === message.id ? "conversation-current" : ""}`}>
             <div className="message-heading">
               <div className="message-heading-meta">
-                <span className="sender-avatar reader-avatar" aria-hidden="true">{messageAvatarLabel(item)}</span>
+                <span className="sender-avatar reader-avatar" aria-hidden="true">
+                  {item.direction === "outbound" && profilePhotoUrl ? <img src={profilePhotoUrl} alt="" /> : messageAvatarLabel(item)}
+                </span>
                 <div>
                   <strong>{messageSender(item)}</strong>
                   <span>{messageSecondary(item)}</span>
@@ -83,13 +90,18 @@ export function MessageReader({ message, thread, onBack, onReply, onForward, onP
                 </div>
                 <div className="attachment-grid">
                   {item.attachments.map((attachment) => {
-                    const href = `/api/attachments/${encodeURIComponent(attachment.id)}`;
-                    const isImage = attachment.contentType.startsWith("image/");
+                    const previewHref = `/api/attachment-previews/${encodeURIComponent(attachment.id)}`;
+                    const isImage = ["image/jpeg", "image/png", "image/gif", "image/webp"].includes(attachment.contentType);
                     return (
-                      <a key={attachment.id} className={`attachment-card ${isImage ? "image-attachment" : ""}`} href={href}>
-                        {isImage ? <img src={href} alt="" loading="lazy" /> : <span className="attachment-card-icon"><Icon name="paperclip" size={17} /></span>}
+                      <button
+                        key={attachment.id}
+                        className={`attachment-card ${isImage ? "image-attachment" : ""}`}
+                        type="button"
+                        onClick={() => setPreviewAttachment(attachment)}
+                      >
+                        {isImage ? <img src={previewHref} alt="" loading="lazy" /> : <span className="attachment-card-icon"><Icon name="paperclip" size={17} /></span>}
                         <span className="attachment-card-copy"><strong>{attachment.filename}</strong><small>{formatBytes(attachment.size)}</small></span>
-                      </a>
+                      </button>
                     );
                   })}
                 </div>
@@ -111,6 +123,8 @@ export function MessageReader({ message, thread, onBack, onReply, onForward, onP
           <button type="button" onClick={() => onPatch({ isDeleted: false }, true)}><Icon name="inbox" size={16} />Restore</button>
         )}
       </footer>
+
+      <AttachmentPreview attachment={previewAttachment} onClose={() => setPreviewAttachment(null)} />
     </section>
   );
 }
