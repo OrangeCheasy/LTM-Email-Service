@@ -2,6 +2,7 @@ import { healthResponse } from "./api/health";
 import { downloadAttachment, getMessage, listMessages, patchMessage } from "./api/mail";
 import { receiveEmail } from "./email/receive";
 import { sendEmail } from "./email/send";
+import { pushConfig, subscribePush, unsubscribePush } from "./push";
 
 function jsonError(message: string, status: number): Response {
   return Response.json({ error: message }, { status });
@@ -14,6 +15,9 @@ export default {
     if (url.pathname === "/api/health" && request.method === "GET") return healthResponse(env);
     if (url.pathname === "/api/messages" && request.method === "GET") return listMessages(request, env);
     if (url.pathname === "/api/send" && request.method === "POST") return sendEmail(request, env);
+    if (url.pathname === "/api/push/config" && request.method === "GET") return pushConfig(env);
+    if (url.pathname === "/api/push/subscribe" && request.method === "POST") return subscribePush(request, env);
+    if (url.pathname === "/api/push/unsubscribe" && request.method === "POST") return unsubscribePush(request, env);
 
     const messageMatch = url.pathname.match(/^\/api\/messages\/([^/]+)$/);
     if (messageMatch) {

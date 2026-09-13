@@ -1,5 +1,6 @@
 import PostalMime from "postal-mime";
 import type { Address, Mailbox } from "postal-mime";
+import { sendNewMailPush } from "../push";
 
 function htmlToText(html: string): string {
   return html
@@ -147,6 +148,12 @@ export async function receiveEmail(message: ForwardableEmailMessage, env: Env, c
     env.DB.prepare(`UPDATE threads SET latest_message_at = ?2, message_count = message_count + 1, is_read = 0, subject = CASE WHEN subject = '' THEN ?3 ELSE subject END WHERE id = ?1`).bind(threadId, nowIso, parsed.subject || "(no subject)"),
   ];
   await env.DB.batch(statements);
+
+  ctx.waitUntil(sendNewMailPush(env, {
+    id,
+    sender: sender?.name || sender?.address || message.from,
+    subject: parsed.subject || "(no subject)",
+  }));
 
   const forwardTo = env.FORWARD_TO.trim();
   if (forwardTo) ctx.waitUntil(message.forward(forwardTo));
