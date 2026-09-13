@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Folder, MessageListItem, NotificationState } from "../mailTypes";
-import { formatDate, senderInitial, senderLabel } from "../mailUtils";
+import { formatDate, senderLabel } from "../mailUtils";
 import { Icon } from "./Icon";
 import { ProfileModal } from "./ProfileModal";
+import { SenderAvatar } from "./SenderAvatar";
 import { TopBar } from "./TopBar";
 
 type MailListProps = {
@@ -162,7 +163,7 @@ export function MailList({
             onClick={() => onOpenMessage(message.id)}
           >
             <span className="mail-row-unread-marker" aria-hidden="true" />
-            <div className="sender-avatar" aria-hidden="true">{message.isDraft ? <Icon name="draft" size={16} /> : senderInitial(message)}</div>
+            <SenderAvatar message={message} />
             <div className="mail-row-copy">
               <div className="mail-row-topline">
                 <span className="mail-row-sender">{message.isDraft ? `Draft · ${message.toAddresses.join(", ") || "No recipient"}` : message.direction === "outbound" ? `To: ${senderLabel(message)}` : senderLabel(message)}</span>
