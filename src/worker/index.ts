@@ -3,6 +3,16 @@ import { deleteDraft, getDraft, saveDraft } from "./api/drafts";
 import { healthResponse } from "./api/health";
 import { downloadAttachment, getMessage, listMessages, patchMessage } from "./api/mail";
 import { deleteProfilePhoto, getProfile, getProfilePhoto, saveProfilePhoto } from "./api/profile";
+import {
+  authenticationOptions,
+  authStatus,
+  isAuthenticated,
+  logout,
+  registrationOptions,
+  unauthorizedResponse,
+  verifyAuthentication,
+  verifyRegistration,
+} from "./auth";
 import { receiveEmail } from "./email/receive";
 import { sendEmail } from "./email/send";
 import { pushConfig, subscribePush, unsubscribePush } from "./push";
@@ -16,6 +26,26 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === "/api/health" && request.method === "GET") return healthResponse(env);
+
+    if (url.pathname === "/api/auth/status" && request.method === "GET") return authStatus(request, env);
+    if (url.pathname === "/api/auth/register/options" && request.method === "POST") {
+      return registrationOptions(request, env);
+    }
+    if (url.pathname === "/api/auth/register/verify" && request.method === "POST") {
+      return verifyRegistration(request, env);
+    }
+    if (url.pathname === "/api/auth/login/options" && request.method === "POST") {
+      return authenticationOptions(request, env);
+    }
+    if (url.pathname === "/api/auth/login/verify" && request.method === "POST") {
+      return verifyAuthentication(request, env);
+    }
+    if (url.pathname === "/api/auth/logout" && request.method === "POST") return logout(request, env);
+
+    if (url.pathname.startsWith("/api/") && !(await isAuthenticated(request, env))) {
+      return unauthorizedResponse();
+    }
+
     if (url.pathname === "/api/messages" && request.method === "GET") return listMessages(request, env);
     if (url.pathname === "/api/send" && request.method === "POST") return sendEmail(request, env);
     if (url.pathname === "/api/drafts" && request.method === "POST") return saveDraft(request, env);
