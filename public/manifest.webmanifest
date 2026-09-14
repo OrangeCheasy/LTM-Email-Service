@@ -10,7 +10,7 @@
   "description": "Private webmail for contact@liamthemo.com",
   "icons": [
     {
-      "src": "/apple-touch-icon.png",
+      "src": "/apple-touch-icon.png?v=10",
       "sizes": "180x180",
       "type": "image/png",
       "purpose": "any"
