@@ -1,0 +1,32 @@
+@media (max-width: 760px) {
+  .reader-reply-bar {
+    display: grid !important;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 6px;
+    overflow: visible !important;
+    padding: 10px max(10px, env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+  }
+
+  .reader-reply-bar button {
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
+    gap: 4px;
+    padding: 9px 4px;
+    font-size: 10px;
+    white-space: nowrap;
+  }
+
+  .reader-reply-bar button .icon {
+    width: 15px;
+    height: 15px;
+    flex: 0 0 auto;
+  }
+
+  .reader-reply-bar .destructive {
+    border-color: rgba(223, 114, 105, .34);
+    background: rgba(90, 36, 31, .22);
+    color: #ef9b93;
+  }
+}
