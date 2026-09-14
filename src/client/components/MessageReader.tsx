@@ -50,7 +50,15 @@ export function MessageReader({ message, thread, onBack, onReply, onForward, onP
           <span>{conversation.length > 1 ? `${conversation.length} messages in this conversation` : message.direction === "inbound" ? "Received message" : "Sent message"}</span>
         </div>
         <div className="reader-actions">
-          <button className={message.isStarred ? "active-star" : ""} type="button" onClick={() => onPatch({ isStarred: !message.isStarred })}><Icon name="star" size={16} /><span>{message.isStarred ? "Unstar" : "Star"}</span></button>
+          <button className={message.isStarred ? "active-star" : ""} type="button" onClick={() => onPatch({ isStarred: !message.isStarred })} aria-label={message.isStarred ? "Unstar message" : "Star message"}><Icon name="star" size={16} /><span>{message.isStarred ? "Unstar" : "Star"}</span></button>
+          {!message.isDeleted ? (
+            <button className="mobile-reader-action" type="button" onClick={() => onPatch({ isArchived: !message.isArchived }, true)} aria-label={message.isArchived ? "Unarchive message" : "Archive message"}><Icon name="archive" size={17} /><span>{message.isArchived ? "Unarchive" : "Archive"}</span></button>
+          ) : null}
+          {!message.isDeleted ? (
+            <button className="mobile-reader-action destructive" type="button" onClick={() => onPatch({ isDeleted: true }, true)} aria-label="Delete message"><Icon name="trash" size={17} /><span>Delete</span></button>
+          ) : (
+            <button className="mobile-reader-action" type="button" onClick={() => onPatch({ isDeleted: false }, true)} aria-label="Restore message"><Icon name="inbox" size={17} /><span>Restore</span></button>
+          )}
         </div>
       </header>
 
