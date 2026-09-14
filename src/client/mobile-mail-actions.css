@@ -1,3 +1,7 @@
+.reader-actions .mobile-reader-action {
+  display: none;
+}
+
 @media (max-width: 760px) {
   .reader-pane {
     min-height: 0;
@@ -6,6 +10,15 @@
   .reader-scroll {
     min-height: 0;
     padding-bottom: 4px;
+  }
+
+  .reader-actions .mobile-reader-action {
+    display: grid !important;
+    place-items: center;
+  }
+
+  .reader-actions .mobile-reader-action.destructive {
+    color: #ef9b93;
   }
 
   .reader-reply-bar {
