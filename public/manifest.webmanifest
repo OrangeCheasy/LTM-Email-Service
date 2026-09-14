@@ -10,7 +10,7 @@
   "description": "Private webmail for contact@liamthemo.com",
   "icons": [
     {
-      "src": "/app-icon-180-v5.png",
+      "src": "/app-icon-180-v5.png?v=7",
       "sizes": "180x180",
       "type": "image/png",
       "purpose": "any"
