@@ -10,6 +10,7 @@ import "./mockup-alignment.css";
 import "./logo-fix.css";
 import "./profile-preview.css";
 import "./profile-crop.css";
+import "./mobile-mail-actions.css";
 
 const root = document.getElementById("root");
 
