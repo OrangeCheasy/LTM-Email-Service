@@ -5,6 +5,7 @@ import { AuthGate } from "./AuthGate";
 import "./styles.css";
 import "./dark.css";
 import "./ui-overrides.css";
+import "./mobile-accounts.css";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Root element not found");
