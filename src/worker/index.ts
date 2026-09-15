@@ -58,7 +58,7 @@ async function routeApi(request: Request, env: Env, url: URL): Promise<Response>
   if (url.pathname === "/api/push/subscribe" && request.method === "POST") return subscribePush(request, env);
   if (url.pathname === "/api/push/unsubscribe" && request.method === "POST") return unsubscribePush(request, env);
   const draftMatch = url.pathname.match(/^\/api\/drafts\/([^/]+)$/); if (draftMatch) { const id=decodeURIComponent(draftMatch[1]); if(request.method==="GET")return getDraft(id,env); if(request.method==="DELETE")return deleteDraft(id,env); return jsonError("Method not allowed",405); }
-  const messageMatch = url.pathname.match(/^\/api\/messages\/([^/]+)$/); if(messageMatch){const id=decodeURIComponent(messageMatch[1]);if(request.method==="GET")return getMessage(id,env);if(request.method==="PATCH")return patchMessage(request,id,env);return jsonError("Method not allowed",405);}
+  const messageMatch = url.pathname.match(/^\/api\/messages\/([^/]+)$/); if(messageMatch){const id=decodeURIComponent(messageMatch[1]);if(request.method==="GET")return getMessage(request,id,env);if(request.method==="PATCH")return patchMessage(request,id,env);return jsonError("Method not allowed",405);}
   const previewMatch=url.pathname.match(/^\/api\/attachment-previews\/([^/]+)$/);if(previewMatch&&request.method==="GET")return previewAttachment(decodeURIComponent(previewMatch[1]),env);
   const attachmentMatch=url.pathname.match(/^\/api\/attachments\/([^/]+)$/);if(attachmentMatch&&request.method==="GET")return downloadAttachment(decodeURIComponent(attachmentMatch[1]),env);
   return jsonError("Not found",404);
