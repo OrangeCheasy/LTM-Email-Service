@@ -6,6 +6,18 @@ type ReplyTarget = {
   subject: string;
 };
 
+type ForwardTarget = {
+  id: string;
+  subject: string;
+};
+
+type StoredAttachment = {
+  filename: string;
+  content_type: string;
+  size: number;
+  r2_key: string;
+};
+
 type Upload = { filename: string; type: string; content: ArrayBuffer };
 
 const MAX_ATTACHMENT_BYTES = 4_000_000;
@@ -41,6 +53,10 @@ function replySubject(subject: string): string {
   return /^re:/i.test(subject) ? subject : `Re: ${subject}`;
 }
 
+function forwardSubject(subject: string): string {
+  return /^(fwd|fw):/i.test(subject) ? subject : `Fwd: ${subject}`;
+}
+
 function attachmentKey(messageId: string, attachmentId: string, now: Date): string {
   const year = now.getUTCFullYear();
   const month = String(now.getUTCMonth() + 1).padStart(2, "0");
@@ -53,6 +69,24 @@ async function parseUploads(form: FormData): Promise<Upload[]> {
   const total = files.reduce((sum, file) => sum + file.size, 0);
   if (total > MAX_ATTACHMENT_BYTES) throw new Error("Attachments must total less than 4 MB");
   return Promise.all(files.map(async (file) => ({ filename: file.name || "attachment", type: file.type || "application/octet-stream", content: await file.arrayBuffer() })));
+}
+
+async function forwardedUploads(messageId: string, env: Env): Promise<Upload[]> {
+  const attachments = await env.DB.prepare(
+    "SELECT filename, content_type, size, r2_key FROM attachments WHERE message_id = ?1 ORDER BY created_at ASC",
+  ).bind(messageId).all<StoredAttachment>();
+
+  const uploads: Upload[] = [];
+  for (const attachment of attachments.results) {
+    const object = await env.MAIL.get(attachment.r2_key);
+    if (!object) throw new Error(`Forwarded attachment is unavailable: ${attachment.filename}`);
+    uploads.push({
+      filename: attachment.filename,
+      type: attachment.content_type || "application/octet-stream",
+      content: await object.arrayBuffer(),
+    });
+  }
+  return uploads;
 }
 
 export async function sendEmail(request: Request, env: Env): Promise<Response> {
@@ -69,8 +103,11 @@ export async function sendEmail(request: Request, env: Env): Promise<Response> {
   let subject = String(form.get("subject") ?? "").trim().slice(0, 500);
   const text = String(form.get("text") ?? "").slice(0, MAX_BODY_CHARS);
   const replyToMessageId = String(form.get("replyToMessageId") ?? "").trim() || null;
+  const forwardMessageId = String(form.get("forwardMessageId") ?? "").trim() || null;
+  const draftId = String(form.get("draftId") ?? "").trim() || null;
   const recipients = [...to, ...cc, ...bcc];
 
+  if (replyToMessageId && forwardMessageId) return Response.json({ error: "A message cannot be both a reply and a forward" }, { status: 400 });
   if (to.length === 0) return Response.json({ error: "At least one recipient is required" }, { status: 400 });
   if (recipients.length > 50) return Response.json({ error: "A message can contain at most 50 recipients" }, { status: 400 });
   if (recipients.some((address) => !EMAIL_PATTERN.test(address))) return Response.json({ error: "One or more recipient addresses are invalid" }, { status: 400 });
@@ -91,6 +128,28 @@ export async function sendEmail(request: Request, env: Env): Promise<Response> {
     if (!replyTarget) return Response.json({ error: "Reply target was not found" }, { status: 404 });
     if (!subject) subject = replySubject(replyTarget.subject);
   }
+
+  let forwardTarget: ForwardTarget | null = null;
+  let inheritedUploads: Upload[] = [];
+  if (forwardMessageId) {
+    forwardTarget = await env.DB.prepare("SELECT id, subject FROM messages WHERE id = ?1")
+      .bind(forwardMessageId)
+      .first<ForwardTarget>();
+    if (!forwardTarget) return Response.json({ error: "Forward target was not found" }, { status: 404 });
+    if (!subject) subject = forwardSubject(forwardTarget.subject);
+    try {
+      inheritedUploads = await forwardedUploads(forwardTarget.id, env);
+    } catch (error) {
+      return Response.json({ error: errorText(error) }, { status: 400 });
+    }
+  }
+
+  const allUploads = [...inheritedUploads, ...uploads];
+  const totalAttachmentBytes = allUploads.reduce((sum, upload) => sum + upload.content.byteLength, 0);
+  if (totalAttachmentBytes > MAX_ATTACHMENT_BYTES) {
+    return Response.json({ error: "Attachments must total less than 4 MB" }, { status: 400 });
+  }
+
   if (!subject) subject = "(no subject)";
 
   const id = crypto.randomUUID();
@@ -117,7 +176,7 @@ export async function sendEmail(request: Request, env: Env): Promise<Response> {
       text,
       html: textToHtml(text),
       headers: Object.keys(headers).length ? headers : undefined,
-      attachments: uploads.map((upload) => ({ content: upload.content, filename: upload.filename, type: upload.type, disposition: "attachment" as const })),
+      attachments: allUploads.map((upload) => ({ content: upload.content, filename: upload.filename, type: upload.type, disposition: "attachment" as const })),
     });
     cloudflareMessageId = result.messageId;
   } catch (error) {
@@ -127,7 +186,7 @@ export async function sendEmail(request: Request, env: Env): Promise<Response> {
 
   const attachmentRows: Array<{ id: string; key: string; upload: Upload }> = [];
   if (status === "sent") {
-    for (const upload of uploads) {
+    for (const upload of allUploads) {
       const attachmentId = crypto.randomUUID();
       const key = attachmentKey(id, attachmentId, now);
       await env.MAIL.put(key, upload.content, { httpMetadata: { contentType: upload.type } });
@@ -150,5 +209,7 @@ export async function sendEmail(request: Request, env: Env): Promise<Response> {
   await env.DB.batch(statements);
 
   if (status === "failed") return Response.json({ error: deliveryError ?? "Email delivery failed", messageId: id }, { status: 502 });
+
+  if (draftId) await env.DB.prepare("DELETE FROM drafts WHERE id = ?1").bind(draftId).run();
   return Response.json({ ok: true, messageId: id, providerMessageId: cloudflareMessageId }, { status: 201 });
 }

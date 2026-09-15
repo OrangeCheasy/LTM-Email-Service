@@ -23,17 +23,60 @@ type NewMailPush = {
   subject: string;
 };
 
+type VapidKeys = {
+  publicKey: string;
+  privateKey: string;
+};
+
 const VAPID_SUBJECT = "mailto:contact@liamthemo.com";
+const BASE64URL = /^[A-Za-z0-9_-]+$/;
+
+function normalizeVapidKey(value: string | undefined): string {
+  let normalized = (value ?? "").trim();
+  const quotePairs: Array<[string, string]> = [
+    ['"', '"'],
+    ["'", "'"],
+    ["“", "”"],
+    ["‘", "’"],
+  ];
+
+  for (const [open, close] of quotePairs) {
+    if (normalized.startsWith(open) && normalized.endsWith(close)) {
+      normalized = normalized.slice(open.length, -close.length).trim();
+      break;
+    }
+  }
+
+  return normalized.replace(/\s+/g, "").replace(/=+$/g, "");
+}
+
+function vapidKeys(env: Env): VapidKeys | null {
+  const publicKey = normalizeVapidKey(env.VAPID_PUBLIC_KEY);
+  const privateKey = normalizeVapidKey(env.VAPID_PRIVATE_KEY);
+
+  // A Web Push VAPID P-256 public key is 65 bytes (87 base64url chars)
+  // and the private scalar is 32 bytes (43 base64url chars), without padding.
+  if (
+    publicKey.length !== 87
+    || privateKey.length !== 43
+    || !BASE64URL.test(publicKey)
+    || !BASE64URL.test(privateKey)
+  ) {
+    return null;
+  }
+
+  return { publicKey, privateKey };
+}
 
 function configured(env: Env): boolean {
-  return Boolean(env.VAPID_PUBLIC_KEY?.trim() && env.VAPID_PRIVATE_KEY?.trim());
+  return vapidKeys(env) !== null;
 }
 
 export function pushConfig(env: Env): Response {
-  const isConfigured = configured(env);
+  const keys = vapidKeys(env);
   return Response.json({
-    configured: isConfigured,
-    publicKey: isConfigured ? env.VAPID_PUBLIC_KEY : null,
+    configured: Boolean(keys),
+    publicKey: keys?.publicKey ?? null,
   });
 }
 
@@ -88,6 +131,9 @@ export async function unsubscribePush(request: Request, env: Env): Promise<Respo
 }
 
 async function sendToSubscription(env: Env, row: StoredSubscription, notification: NewMailPush): Promise<void> {
+  const keys = vapidKeys(env);
+  if (!keys) return;
+
   const subscription: PushSubscription = {
     endpoint: row.endpoint,
     expirationTime: row.expiration_time,
@@ -97,7 +143,7 @@ async function sendToSubscription(env: Env, row: StoredSubscription, notificatio
   const payload = await buildPushPayload(
     {
       data: JSON.stringify({
-        title: "LTM Mail",
+        title: "LTM Mails",
         body: `${notification.sender}: ${notification.subject}`.slice(0, 220),
         tag: `message-${notification.id}`,
         url: "/",
@@ -107,8 +153,8 @@ async function sendToSubscription(env: Env, row: StoredSubscription, notificatio
     subscription,
     {
       subject: VAPID_SUBJECT,
-      publicKey: env.VAPID_PUBLIC_KEY!,
-      privateKey: env.VAPID_PRIVATE_KEY!,
+      publicKey: keys.publicKey,
+      privateKey: keys.privateKey,
     },
   );
 

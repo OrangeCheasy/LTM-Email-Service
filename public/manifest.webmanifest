@@ -1,11 +1,19 @@
 {
-  "name": "LTM Mail",
-  "short_name": "LTM Mail",
+  "name": "LTM Mails",
+  "short_name": "LTM Mails",
   "id": "/",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#111318",
-  "theme_color": "#111318",
-  "description": "Private webmail for contact@liamthemo.com"
+  "background_color": "#0d0c0b",
+  "theme_color": "#0d0c0b",
+  "description": "Private webmail for contact@liamthemo.com",
+  "icons": [
+    {
+      "src": "/apple-touch-icon.png?v=11",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
 }

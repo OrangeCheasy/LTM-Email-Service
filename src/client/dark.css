@@ -1,0 +1,139 @@
+:root {
+  color-scheme: dark;
+  color: #f3eff4;
+  background: #202531;
+  --bg: #202531;
+  --panel: #202531;
+  --panel-soft: #252735;
+  --line: #3d394d;
+  --line-strong: #57486d;
+  --text: #f3eff4;
+  --muted: #c5c3c4;
+  --muted-2: #918b99;
+  --accent: #b6a2c9;
+  --accent-soft: #322f42;
+  --accent-strong: #4b396f;
+  --danger: #e795a2;
+  --shadow: 0 22px 70px rgba(8, 9, 14, .55);
+}
+
+body { background: var(--bg); }
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+a:focus-visible { outline-color: rgba(182, 162, 201, .8); }
+
+.desktop-sidebar { background: #191d27; }
+.brand-row { align-items: center; }
+.brand-copy { min-width: 0; height: 38px; display: flex; align-items: center; }
+.brand-title { display: block; margin: 0; color: var(--text); font-size: 15px; font-weight: 750; line-height: 1; white-space: nowrap; }
+.brand-mark { background: #b6a2c9; color: #202531; box-shadow: 0 4px 16px rgba(8,9,14,.34); }
+.primary-compose { border: 1px solid #b6a2c9; background: #b6a2c9; color: #202531; box-shadow: 0 5px 18px rgba(8,9,14,.28); }
+.primary-compose:hover { background: #c5b4d5; border-color: #c5b4d5; }
+.nav-item { color: #c5c3c4; }
+.nav-item:hover { background: rgba(50,47,66,.62); color: var(--text); }
+.nav-item.active { background: #322f42; color: var(--text); box-shadow: inset 3px 0 0 #b6a2c9, inset 0 0 0 1px rgba(182,162,201,.08); }
+.nav-count { background: #322f42; color: #c5c3c4; }
+.nav-item.active .nav-count { background: #4b396f; color: #eee7f4; }
+.notification-card:hover:not(:disabled) { background: rgba(50,47,66,.55); }
+.notification-icon { background: #322f42; color: #b6a2c9; }
+.notification-icon.enabled { background: #4b396f; color: #e9def2; }
+.notification-copy strong { color: #e6e0e7; }
+.account-card { border-top-color: var(--line); }
+.account-avatar { background: #322f42; color: #d7ccdf; }
+.account-card strong { color: #e1dce3; }
+.status-dot { background: #918b99; }
+.status-dot.online { background: #9acb9a; }
+.status-dot.offline { background: #e795a2; }
+.account-card > .icon { color: #918b99; }
+
+.mail-list-pane { background: #242633; }
+.mail-list-header h1 { color: var(--text); }
+.icon-button { border-color: var(--line); background: #2a2b39; color: #c5c3c4; box-shadow: 0 1px 3px rgba(8,9,14,.2); }
+.icon-button:hover { color: #efeaf1; border-color: #6b5a82; background: #322f42; }
+.search-wrap { border-color: #3d394d; background: #1b202a; color: #918b99; }
+.search-wrap:focus-within { border-color: #7f6a98; background: #20232f; box-shadow: 0 0 0 3px rgba(182,162,201,.10); }
+.search-wrap input { color: var(--text); }
+.search-wrap input::placeholder { color: #777282; }
+.search-wrap button { background: #322f42; color: #b6a2c9; }
+.mail-list-scroll::-webkit-scrollbar-thumb,
+.reader-scroll::-webkit-scrollbar-thumb { background-color: #51485f; }
+.empty-orb { border-color: var(--line); background: #2a2b39; color: #b6a2c9; }
+.mail-list-empty strong { color: #dfd9e1; }
+.mail-row:hover { background: rgba(50,47,66,.52); }
+.mail-row.selected { background: #322f42; box-shadow: inset 3px 0 0 #b6a2c9, 0 2px 8px rgba(8,9,14,.16); }
+.sender-avatar { background: #322f42; color: #c5c3c4; }
+.mail-row.unread .sender-avatar { background: #4b396f; color: #eee7f4; }
+.mail-row-sender { color: #d2ccd5; }
+.mail-row.unread .mail-row-sender { color: #f6f1f7; }
+.mail-row-topline time { color: #918b99; }
+.mail-row-subject strong { color: #beb7c2; }
+.mail-row.unread .mail-row-subject strong { color: #e9e2eb; }
+.unread-dot { background: #b6a2c9; box-shadow: 0 0 0 2px rgba(182,162,201,.10); }
+.star-mark { color: #c6a76e; }
+.attachment-mark { color: #918b99; }
+.mail-row p { color: #918b99; }
+
+.reader-pane { background: #202531; }
+.reader-toolbar { background: rgba(32,37,49,.94); }
+.reader-actions button,
+.reader-reply-bar button { border-color: var(--line); background: #2b2b39; color: #c5c3c4; }
+.reader-actions button:hover,
+.reader-reply-bar button:hover { border-color: #6b5a82; color: var(--text); background: #322f42; }
+.reader-actions button.destructive { color: #e795a2; }
+.reader-avatar { background: #322f42; color: #d8cee0; }
+.message-heading-meta strong { color: #e8e2ea; }
+.message-heading-meta span { color: #b0aab3; }
+.message-heading-meta time { color: #918b99; }
+.message-heading h2 { color: #f4eff5; }
+.message-content pre { color: #ddd7df; }
+.security-note { background: #2a2b39; color: #aaa3ae; }
+.delivery-error { border-color: #70434d; background: #3b252e; color: #efadb6; }
+.reader-attachments h3 { color: #c9c2cc; }
+.reader-attachments h3 span { color: #918b99; }
+.attachment-card { border-color: var(--line); background: #292a37; color: #ded8e1; }
+.attachment-card:hover { border-color: #6b5a82; background: #322f42; }
+.attachment-card-icon { background: #322f42; color: #b6a2c9; }
+.attachment-card small { color: #918b99; }
+.reader-reply-bar { background: rgba(32,37,49,.95); }
+.reader-empty { background: #202531; }
+.reader-empty-icon { border-color: var(--line); background: #2a2b39; color: #b6a2c9; }
+.reader-empty-card strong { color: #d9d3dc; }
+
+.compose-overlay { background: rgba(12,12,18,.66); }
+.compose-modal { border-color: #4a4258; background: #322f42; box-shadow: var(--shadow); }
+.compose-header { border-bottom-color: #494255; }
+.compose-header strong { color: #f3eff4; }
+.compose-close { background: #4b455b; color: #d8d1dc; }
+.compose-fields label { border-bottom-color: #494255; color: #b6a2c9; }
+.compose-fields input { color: #f3eff4; }
+.compose-fields input::placeholder { color: #918b99; }
+.compose-inline-fields label:first-child { border-right-color: #494255; }
+.compose-body { background: #272936; color: #e4dee7; }
+.compose-body::placeholder { color: #918b99; }
+.file-chips { border-top-color: #494255; }
+.file-chips span { background: #4b396f; color: #e2d8ea; }
+.compose-footer { border-top-color: #494255; background: #2d2b3b; }
+.attach-control { border-color: #5a506a; background: #3a354b; color: #d3ccd7; }
+.compose-from { color: #a49da8; }
+.send-control { background: #b6a2c9; color: #202531; }
+.send-control:hover:not(:disabled) { background: #c5b4d5; }
+
+.toast-error { border-color: #70434d; background: #3b252e; color: #efadb6; box-shadow: 0 12px 34px rgba(8,9,14,.4); }
+
+@media (max-width: 760px) {
+  .app-shell { background: #202531; }
+  .mail-list-pane { background: #202531; }
+  .mail-list-header { background: rgba(32,37,49,.95); }
+  .search-wrap { background: #292a37; border-color: transparent; }
+  .mail-row.selected { background: #322f42; }
+  .reader-pane { background: #202531; }
+  .reader-back { color: #b6a2c9; }
+  .reader-actions button { background: transparent; }
+  .reader-reply-bar button { background: #322f42; }
+  .mobile-nav { border-top-color: rgba(79,70,92,.88); background: rgba(25,29,39,.95); }
+  .mobile-nav button { color: #918b99; }
+  .mobile-nav button.active { color: #b6a2c9; }
+  .mobile-compose-fab { background: #b6a2c9; color: #202531; box-shadow: 0 10px 30px rgba(8,9,14,.42); }
+  .compose-modal { box-shadow: 0 -10px 50px rgba(8,9,14,.48); }
+}
