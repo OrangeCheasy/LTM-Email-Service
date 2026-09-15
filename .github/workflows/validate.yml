@@ -34,4 +34,15 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Type-check and build
-        run: npm run build
+        run: |
+          set -o pipefail
+          npm run build 2>&1 | tee validation.log
+
+      - name: Preserve diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: validation-log-${{ github.run_id }}
+          path: validation.log
+          retention-days: 1
+          if-no-files-found: ignore
