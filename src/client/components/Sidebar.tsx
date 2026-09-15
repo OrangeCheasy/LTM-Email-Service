@@ -1,4 +1,5 @@
 import type { Folder, FolderDefinition, HealthState, NotificationState } from "../mailTypes";
+import { notificationLabel } from "../mailUtils";
 import { Icon } from "./Icon";
 
 type SidebarProps = {
@@ -13,18 +14,6 @@ type SidebarProps = {
   onCompose: () => void;
   onToggleNotifications: () => void;
 };
-
-function notificationText(state: NotificationState): string {
-  switch (state) {
-    case "on": return "Notifications on";
-    case "off": return "Enable notifications";
-    case "blocked": return "Notifications blocked";
-    case "unsupported": return "Notifications unavailable";
-    case "unconfigured": return "Notification setup needed";
-    case "working": return "Updating notifications";
-    default: return "Checking notifications";
-  }
-}
 
 export function Sidebar({ folders, activeFolder, unreadCount, draftCount, health, notificationState, notificationsDisabled, onFolderChange, onCompose, onToggleNotifications }: SidebarProps) {
   return (
@@ -63,7 +52,7 @@ export function Sidebar({ folders, activeFolder, unreadCount, draftCount, health
 
       <button className="notification-card" type="button" disabled={notificationsDisabled} onClick={onToggleNotifications}>
         <span className={`notification-icon ${notificationState === "on" ? "enabled" : ""}`}><Icon name="bell" size={16} /></span>
-        <span className="notification-copy"><strong>{notificationText(notificationState)}</strong><small>Push alerts for new mail</small></span>
+        <span className="notification-copy"><strong>{notificationLabel(notificationState)}</strong><small>Push alerts for new mail</small></span>
       </button>
 
       <div className="account-card">
