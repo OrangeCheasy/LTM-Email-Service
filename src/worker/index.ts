@@ -16,55 +16,14 @@ const AUTH_POSTS = new Set(["/api/auth/register/options", "/api/auth/register/ve
 const MAX_API_BODY_BYTES = 8 * 1024 * 1024;
 const jsonError = (message: string, status: number) => Response.json({ error: message }, { status });
 const sameOrigin = (request: Request) => SAFE_METHODS.has(request.method) || request.headers.get("Origin") === APP_ORIGIN;
-
-function requestTooLarge(request: Request): boolean {
-  const raw = request.headers.get("Content-Length");
-  if (!raw) return false;
-  const length = Number(raw);
-  return Number.isFinite(length) && length > MAX_API_BODY_BYTES;
+function requestTooLarge(request: Request): boolean { const raw=request.headers.get("Content-Length"); if(!raw)return false; const length=Number(raw); return Number.isFinite(length)&&length>MAX_API_BODY_BYTES; }
+function secureApiResponse(response:Response):Response{const headers=new Headers(response.headers);headers.set("Cache-Control","private, no-store");headers.set("Content-Security-Policy","default-src 'none'; frame-ancestors 'none'; base-uri 'none'");headers.set("Referrer-Policy","no-referrer");headers.set("X-Content-Type-Options","nosniff");headers.set("X-Frame-Options","DENY");return new Response(response.body,{status:response.status,statusText:response.statusText,headers});}
+async function routeApi(request:Request,env:Env,url:URL):Promise<Response>{
+ if(!sameOrigin(request))return jsonError("Cross-origin request rejected",403);if(!SAFE_METHODS.has(request.method)&&requestTooLarge(request))return jsonError("Request body too large",413);
+ if(request.method==="POST"&&AUTH_POSTS.has(url.pathname)&&!(await checkAuthRateLimit(env,authRateLimitBucket(request,url.pathname))))return new Response(JSON.stringify({error:"Too many authentication attempts"}),{status:429,headers:{"Content-Type":"application/json","Retry-After":"60"}});
+ if(url.pathname==="/api/auth/status"&&request.method==="GET")return authStatus(request,env);if(url.pathname==="/api/auth/register/options"&&request.method==="POST")return registrationOptions(request,env);if(url.pathname==="/api/auth/register/verify"&&request.method==="POST")return verifyRegistration(request,env);if(url.pathname==="/api/auth/login/options"&&request.method==="POST")return authenticationOptions(request,env);if(url.pathname==="/api/auth/login/verify"&&request.method==="POST")return verifyAuthentication(request,env);if(url.pathname==="/api/auth/logout"&&request.method==="POST")return logout(request,env);
+ if(!(await isAuthenticated(request,env)))return unauthorizedResponse();if(url.pathname==="/api/health"&&request.method==="GET")return healthResponse(env);if(url.pathname==="/api/accounts"&&request.method==="GET")return getConnectedAccounts(env);if(url.pathname==="/api/messages"&&request.method==="GET")return listMessages(request,env);if(url.pathname==="/api/send"&&request.method==="POST")return sendEmail(request,env);if(url.pathname==="/api/drafts"&&request.method==="POST")return saveDraft(request,env);if(url.pathname==="/api/profile"&&request.method==="GET")return getProfile(env);
+ if(url.pathname==="/api/profile/photo"){if(request.method==="GET")return getProfilePhoto(env);if(request.method==="PUT")return saveProfilePhoto(request,env);if(request.method==="DELETE")return deleteProfilePhoto(env);return jsonError("Method not allowed",405);}if(url.pathname==="/api/push/config"&&request.method==="GET")return pushConfig(env);if(url.pathname==="/api/push/subscribe"&&request.method==="POST")return subscribePush(request,env);if(url.pathname==="/api/push/unsubscribe"&&request.method==="POST")return unsubscribePush(request,env);
+ const draftMatch=url.pathname.match(/^\/api\/drafts\/([^/]+)$/);if(draftMatch){const id=decodeURIComponent(draftMatch[1]);if(request.method==="GET")return getDraft(id,env);if(request.method==="DELETE")return deleteDraft(id,env);return jsonError("Method not allowed",405);}const messageMatch=url.pathname.match(/^\/api\/messages\/([^/]+)$/);if(messageMatch){const id=decodeURIComponent(messageMatch[1]);if(request.method==="GET")return getMessage(request,id,env);if(request.method==="PATCH")return patchMessage(request,id,env);return jsonError("Method not allowed",405);}const previewMatch=url.pathname.match(/^\/api\/attachment-previews\/([^/]+)$/);if(previewMatch&&request.method==="GET")return previewAttachment(request,decodeURIComponent(previewMatch[1]),env);const attachmentMatch=url.pathname.match(/^\/api\/attachments\/([^/]+)$/);if(attachmentMatch&&request.method==="GET")return downloadAttachment(decodeURIComponent(attachmentMatch[1]),env);return jsonError("Not found",404);
 }
-
-function secureApiResponse(response: Response): Response {
-  const headers = new Headers(response.headers);
-  headers.set("Cache-Control", "private, no-store");
-  headers.set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'");
-  headers.set("Referrer-Policy", "no-referrer");
-  headers.set("X-Content-Type-Options", "nosniff");
-  headers.set("X-Frame-Options", "DENY");
-  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
-}
-
-async function routeApi(request: Request, env: Env, url: URL): Promise<Response> {
-  if (!sameOrigin(request)) return jsonError("Cross-origin request rejected", 403);
-  if (!SAFE_METHODS.has(request.method) && requestTooLarge(request)) return jsonError("Request body too large", 413);
-  if (request.method === "POST" && AUTH_POSTS.has(url.pathname) && !(await checkAuthRateLimit(env, authRateLimitBucket(request, url.pathname)))) {
-    return new Response(JSON.stringify({ error: "Too many authentication attempts" }), { status: 429, headers: { "Content-Type": "application/json", "Retry-After": "60" } });
-  }
-  if (url.pathname === "/api/auth/status" && request.method === "GET") return authStatus(request, env);
-  if (url.pathname === "/api/auth/register/options" && request.method === "POST") return registrationOptions(request, env);
-  if (url.pathname === "/api/auth/register/verify" && request.method === "POST") return verifyRegistration(request, env);
-  if (url.pathname === "/api/auth/login/options" && request.method === "POST") return authenticationOptions(request, env);
-  if (url.pathname === "/api/auth/login/verify" && request.method === "POST") return verifyAuthentication(request, env);
-  if (url.pathname === "/api/auth/logout" && request.method === "POST") return logout(request, env);
-  if (!(await isAuthenticated(request, env))) return unauthorizedResponse();
-  if (url.pathname === "/api/health" && request.method === "GET") return healthResponse(env);
-  if (url.pathname === "/api/accounts" && request.method === "GET") return getConnectedAccounts(env);
-  if (url.pathname === "/api/messages" && request.method === "GET") return listMessages(request, env);
-  if (url.pathname === "/api/send" && request.method === "POST") return sendEmail(request, env);
-  if (url.pathname === "/api/drafts" && request.method === "POST") return saveDraft(request, env);
-  if (url.pathname === "/api/profile" && request.method === "GET") return getProfile(env);
-  if (url.pathname === "/api/profile/photo") { if (request.method === "GET") return getProfilePhoto(env); if (request.method === "PUT") return saveProfilePhoto(request, env); if (request.method === "DELETE") return deleteProfilePhoto(env); return jsonError("Method not allowed", 405); }
-  if (url.pathname === "/api/push/config" && request.method === "GET") return pushConfig(env);
-  if (url.pathname === "/api/push/subscribe" && request.method === "POST") return subscribePush(request, env);
-  if (url.pathname === "/api/push/unsubscribe" && request.method === "POST") return unsubscribePush(request, env);
-  const draftMatch = url.pathname.match(/^\/api\/drafts\/([^/]+)$/); if (draftMatch) { const id=decodeURIComponent(draftMatch[1]); if(request.method==="GET")return getDraft(id,env); if(request.method==="DELETE")return deleteDraft(id,env); return jsonError("Method not allowed",405); }
-  const messageMatch = url.pathname.match(/^\/api\/messages\/([^/]+)$/); if(messageMatch){const id=decodeURIComponent(messageMatch[1]);if(request.method==="GET")return getMessage(request,id,env);if(request.method==="PATCH")return patchMessage(request,id,env);return jsonError("Method not allowed",405);}
-  const previewMatch=url.pathname.match(/^\/api\/attachment-previews\/([^/]+)$/);if(previewMatch&&request.method==="GET")return previewAttachment(decodeURIComponent(previewMatch[1]),env);
-  const attachmentMatch=url.pathname.match(/^\/api\/attachments\/([^/]+)$/);if(attachmentMatch&&request.method==="GET")return downloadAttachment(decodeURIComponent(attachmentMatch[1]),env);
-  return jsonError("Not found",404);
-}
-
-export default {
-  async fetch(request, env): Promise<Response> { const url=new URL(request.url); if(url.pathname.startsWith("/api/"))return secureApiResponse(await routeApi(request,env,url)); return env.ASSETS.fetch(request); },
-  async email(message, env, ctx): Promise<void> { await receiveEmail(message,env,ctx); },
-} satisfies ExportedHandler<Env>;
+export default{async fetch(request,env):Promise<Response>{const url=new URL(request.url);if(url.pathname.startsWith("/api/"))return secureApiResponse(await routeApi(request,env,url));return env.ASSETS.fetch(request);},async email(message,env,ctx):Promise<void>{await receiveEmail(message,env,ctx);}} satisfies ExportedHandler<Env>;
