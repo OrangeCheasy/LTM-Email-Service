@@ -1,5 +1,6 @@
 import type { FormEvent } from "react";
 import type { NotificationState } from "../mailTypes";
+import { notificationLabel } from "../mailUtils";
 import { Icon } from "./Icon";
 
 type TopBarProps = {
@@ -12,18 +13,6 @@ type TopBarProps = {
   onToggleNotifications: () => void;
   onOpenProfile: () => void;
 };
-
-function notificationLabel(state: NotificationState): string {
-  switch (state) {
-    case "on": return "Notifications on";
-    case "off": return "Enable notifications";
-    case "blocked": return "Notifications blocked";
-    case "unsupported": return "Notifications unavailable";
-    case "unconfigured": return "Notification setup needed";
-    case "working": return "Updating notifications";
-    default: return "Checking notifications";
-  }
-}
 
 export function TopBar({
   search,
