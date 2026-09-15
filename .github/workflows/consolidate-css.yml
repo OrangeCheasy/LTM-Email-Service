@@ -1,0 +1,56 @@
+name: Consolidate client CSS
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/consolidate-css.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  consolidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: true
+
+      - name: Consolidate overrides without changing cascade
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=(
+            src/client/mobile-notifications.css
+            src/client/mockup.css
+            src/client/phase1.css
+            src/client/mockup-alignment.css
+            src/client/logo-fix.css
+            src/client/profile-preview.css
+            src/client/profile-crop.css
+            src/client/mobile-mail-actions.css
+            src/client/auth.css
+          )
+          {
+            printf '/* Consolidated UI overrides. Sections retain the previous cascade order. */\n\n'
+            for file in "${files[@]}"; do
+              printf '/* ---- %s ---- */\n' "${file##*/}"
+              cat "$file"
+              printf '\n\n'
+            done
+          } > src/client/ui-overrides.css
+          rm "${files[@]}"
+
+      - name: Commit consolidation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/client
+          git diff --cached --check
+          git diff --cached --quiet && exit 0
+          git commit -m "refactor: consolidate client CSS overrides"
+          git push
