@@ -4,16 +4,24 @@ import { healthResponse } from "./api/health";
 import { downloadAttachment, getMessage, listMessages, patchMessage } from "./api/mail";
 import { deleteProfilePhoto, getProfile, getProfilePhoto, saveProfilePhoto } from "./api/profile";
 import { authenticationOptions, authStatus, isAuthenticated, logout, registrationOptions, unauthorizedResponse, verifyAuthentication, verifyRegistration } from "./auth";
+import { APP_ORIGIN } from "./config";
 import { receiveEmail } from "./email/receive";
 import { sendEmail } from "./email/send";
 import { pushConfig, subscribePush, unsubscribePush } from "./push";
 import { authRateLimitBucket, checkAuthRateLimit } from "./security";
 
-const APP_ORIGIN = "https://email.liamthemo.com";
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 const AUTH_POSTS = new Set(["/api/auth/register/options", "/api/auth/register/verify", "/api/auth/login/options", "/api/auth/login/verify"]);
+const MAX_API_BODY_BYTES = 8 * 1024 * 1024;
 const jsonError = (message: string, status: number) => Response.json({ error: message }, { status });
 const sameOrigin = (request: Request) => SAFE_METHODS.has(request.method) || request.headers.get("Origin") === APP_ORIGIN;
+
+function requestTooLarge(request: Request): boolean {
+  const raw = request.headers.get("Content-Length");
+  if (!raw) return false;
+  const length = Number(raw);
+  return Number.isFinite(length) && length > MAX_API_BODY_BYTES;
+}
 
 function secureApiResponse(response: Response): Response {
   const headers = new Headers(response.headers);
@@ -27,6 +35,7 @@ function secureApiResponse(response: Response): Response {
 
 async function routeApi(request: Request, env: Env, url: URL): Promise<Response> {
   if (!sameOrigin(request)) return jsonError("Cross-origin request rejected", 403);
+  if (!SAFE_METHODS.has(request.method) && requestTooLarge(request)) return jsonError("Request body too large", 413);
   if (request.method === "POST" && AUTH_POSTS.has(url.pathname) && !(await checkAuthRateLimit(env, authRateLimitBucket(request, url.pathname)))) {
     return new Response(JSON.stringify({ error: "Too many authentication attempts" }), { status: 429, headers: { "Content-Type": "application/json", "Retry-After": "60" } });
   }
