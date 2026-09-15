@@ -2,9 +2,8 @@ name: Validate development
 
 on:
   push:
-    branches-ignore:
-      - main
-      - 'v[0-9]+.[0-9]'
+    branches:
+      - v1.01
   pull_request:
 
 permissions:
