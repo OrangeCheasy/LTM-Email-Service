@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Folder, MessageListItem, NotificationState } from "../mailTypes";
-import { formatDate, senderLabel } from "../mailUtils";
+import { formatDate, notificationLabel, senderLabel } from "../mailUtils";
 import { Icon } from "./Icon";
 import { ProfileModal } from "./ProfileModal";
 import { SenderAvatar } from "./SenderAvatar";
@@ -23,18 +23,6 @@ type MailListProps = {
 };
 
 type ListFilter = "all" | "unread" | "starred";
-
-function notificationLabel(state: NotificationState): string {
-  switch (state) {
-    case "on": return "Notifications on";
-    case "off": return "Enable notifications";
-    case "blocked": return "Notifications blocked";
-    case "unsupported": return "Notifications unavailable";
-    case "unconfigured": return "Notification setup needed";
-    case "working": return "Updating notifications";
-    default: return "Checking notifications";
-  }
-}
 
 export function MailList({
   folder,
