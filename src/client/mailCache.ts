@@ -1,10 +1,9 @@
-import type { MessageListItem } from "./mailTypes";
-
-type CachedMailbox={savedAt:number;messages:MessageListItem[];unreadCount:number;draftCount:number};
 const PREFIX="ltm-mail-cache:v1:";
-const MAX_AGE_MS=24*60*60*1000;
-function key(accountId:string,folder:string,query:string){return `${PREFIX}${encodeURIComponent(accountId)}:${encodeURIComponent(folder)}:${encodeURIComponent(query.trim().toLowerCase())}`}
-export function readMailCache(accountId:string,folder:string,query:string):CachedMailbox|null{try{const raw=localStorage.getItem(key(accountId,folder,query));if(!raw)return null;const value=JSON.parse(raw) as CachedMailbox;if(!value||!Array.isArray(value.messages)||Date.now()-value.savedAt>MAX_AGE_MS){localStorage.removeItem(key(accountId,folder,query));return null}return value}catch{return null}}
-export function writeMailCache(accountId:string,folder:string,query:string,value:Omit<CachedMailbox,"savedAt">){try{localStorage.setItem(key(accountId,folder,query),JSON.stringify({...value,savedAt:Date.now()}))}catch{}}
-export function clearAccountMailCache(accountId:string){try{const prefix=`${PREFIX}${encodeURIComponent(accountId)}:`;for(let i=localStorage.length-1;i>=0;i--){const k=localStorage.key(i);if(k?.startsWith(prefix))localStorage.removeItem(k)}}catch{}}
-export function clearAllMailCache(){try{for(let i=localStorage.length-1;i>=0;i--){const k=localStorage.key(i);if(k?.startsWith(PREFIX))localStorage.removeItem(k)}}catch{}}
+const FRESH_MS=60_000;
+type Entry={savedAt:number;status:number;statusText:string;headers:[string,string][];body:string};
+function cacheKey(url:URL){return `${PREFIX}${url.pathname}?${url.searchParams.toString()}`}
+function read(key:string):Entry|null{try{const raw=sessionStorage.getItem(key);if(!raw)return null;const entry=JSON.parse(raw) as Entry;if(!entry||Date.now()-entry.savedAt>FRESH_MS){sessionStorage.removeItem(key);return null}return entry}catch{return null}}
+function response(entry:Entry){return new Response(entry.body,{status:entry.status,statusText:entry.statusText,headers:entry.headers})}
+export function installMailFetchCache(){const original=window.fetch.bind(window);window.fetch=async(input:RequestInfo|URL,init?:RequestInit)=>{const request=new Request(input,init),url=new URL(request.url,location.origin);if(request.method!=="GET"||url.origin!==location.origin||url.pathname!=="/api/messages")return original(input,init);const key=cacheKey(url),cached=read(key);if(cached)return response(cached);const network=await original(input,init);if(network.ok){try{const clone=network.clone(),body=await clone.text(),entry:Entry={savedAt:Date.now(),status:clone.status,statusText:clone.statusText,headers:Array.from(clone.headers.entries()),body};sessionStorage.setItem(key,JSON.stringify(entry))}catch{}}return network}}
+export function clearAccountMailCache(accountId:string){try{for(let i=sessionStorage.length-1;i>=0;i--){const key=sessionStorage.key(i);if(!key?.startsWith(PREFIX))continue;const raw=key.slice(PREFIX.length),url=new URL(raw,location.origin);if(url.searchParams.get("accountId")===accountId)sessionStorage.removeItem(key)}}catch{}}
+export function clearAllMailCache(){try{for(let i=sessionStorage.length-1;i>=0;i--){const key=sessionStorage.key(i);if(key?.startsWith(PREFIX))sessionStorage.removeItem(key)}}catch{}}
