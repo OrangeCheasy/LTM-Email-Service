@@ -3,7 +3,7 @@ name: Validate development
 on:
   push:
     branches:
-      - v0.02
+      - v1.02
   pull_request:
 
 permissions:
