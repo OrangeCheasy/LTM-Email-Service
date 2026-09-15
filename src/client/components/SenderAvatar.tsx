@@ -8,7 +8,7 @@ type SenderAvatarProps = {
 
 export function SenderAvatar({ message }: SenderAvatarProps) {
   return (
-    <i className="sender-avatar" aria-hidden="true" style={{ fontStyle: "normal" }}>
+    <i className="sender-avatar" aria-hidden="true">
       {message.isDraft ? <Icon name="draft" size={16} /> : senderInitial(message)}
     </i>
   );
