@@ -1,30 +1,5 @@
-import type { Folder, FolderDefinition } from "../mailTypes";
+import type { ConnectedAccount, Folder, FolderDefinition } from "../mailTypes";
 import { Icon } from "./Icon";
 
-type MobileNavProps = {
-  folders: FolderDefinition[];
-  activeFolder: Folder;
-  unreadCount: number;
-  draftCount: number;
-  onFolderChange: (folder: Folder) => void;
-  onCompose: () => void;
-};
-
-export function MobileNav({ folders, activeFolder, unreadCount, draftCount, onFolderChange, onCompose }: MobileNavProps) {
-  return (
-    <>
-      <button className="mobile-compose-fab" type="button" aria-label="Compose new message" onClick={onCompose}><Icon name="compose" size={22} /></button>
-      <nav className="mobile-nav" aria-label="Mobile mail folders">
-        {folders.map((item) => {
-          const count = item.key === "inbox" ? unreadCount : item.key === "drafts" ? draftCount : 0;
-          return (
-            <button key={item.key} className={activeFolder === item.key ? "active" : ""} type="button" onClick={() => onFolderChange(item.key)}>
-              <span className="mobile-nav-icon"><Icon name={item.icon} size={18} />{count > 0 ? <i>{count}</i> : null}</span>
-              <span>{item.label}</span>
-            </button>
-          );
-        })}
-      </nav>
-    </>
-  );
-}
+type MobileNavProps={folders:FolderDefinition[];activeFolder:Folder;unreadCount:number;draftCount:number;accounts:ConnectedAccount[];activeAccountId:string;connectingGmail:boolean;onAccountChange:(id:string)=>void;onConnectGmail:()=>void;onFolderChange:(folder:Folder)=>void;onCompose:()=>void};
+export function MobileNav({folders,activeFolder,unreadCount,draftCount,accounts,activeAccountId,connectingGmail,onAccountChange,onConnectGmail,onFolderChange,onCompose}:MobileNavProps){return <><div className="mobile-account-bar"><select aria-label="Mail account" value={activeAccountId} onChange={e=>onAccountChange(e.target.value)}>{accounts.map(a=><option key={a.id} value={a.id}>{a.provider==="gmail"?"Gmail · ":"LTM · "}{a.emailAddress}</option>)}</select>{!accounts.some(a=>a.provider==="gmail")?<button type="button" disabled={connectingGmail} onClick={onConnectGmail}><Icon name="compose" size={15}/><span>{connectingGmail?"Connecting…":"Connect Gmail"}</span></button>:null}</div><button className="mobile-compose-fab" type="button" aria-label="Compose new message" onClick={onCompose}><Icon name="compose" size={22}/></button><nav className="mobile-nav" aria-label="Mobile mail folders">{folders.map(item=>{const count=item.key==="inbox"?unreadCount:item.key==="drafts"?draftCount:0;return <button key={item.key} className={activeFolder===item.key?"active":""} type="button" onClick={()=>onFolderChange(item.key)}><span className="mobile-nav-icon"><Icon name={item.icon} size={18}/>{count>0?<i>{count}</i>:null}</span><span>{item.label}</span></button>})}</nav></>}
