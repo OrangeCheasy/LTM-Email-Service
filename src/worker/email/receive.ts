@@ -13,6 +13,10 @@ const safePreview = (value: string) => value.replace(/\s+/g, " ").trim().slice(0
 const safeFilename = (value: string | null | undefined, fallback: string) => (value || fallback).replace(/[\u0000-\u001f\u007f/\\]/g, "_").slice(0, 255);
 const addresses = (items: Array<{ address?: string }> | undefined) => (items ?? []).map(item => item.address?.trim()).filter((value): value is string => Boolean(value)).slice(0, 100);
 
+function htmlToText(html: string): string {
+  return html.replace(/<\s*(script|style)[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, " ").replace(/<\s*br\s*\/?>/gi, "\n").replace(/<\/(p|div|li|tr|h[1-6])\s*>/gi, "\n").replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&quot;/gi, '"').replace(/&#39;/gi, "'").replace(/[ \t]+/g, " ").replace(/\n\s*\n\s*\n+/g, "\n\n").trim();
+}
+
 function contentBytes(content: string | ArrayBuffer | Uint8Array<ArrayBufferLike>): Uint8Array {
   if (typeof content === "string") return encoder.encode(content);
   if (content instanceof ArrayBuffer) return new Uint8Array(content);
@@ -28,6 +32,19 @@ function truncateUtf8(value: string, maxBytes: number): string {
     else high = mid - 1;
   }
   return value.slice(0, low);
+}
+
+function referenceCandidates(inReplyTo: string | null, references: string | null): string[] {
+  const refs = references?.match(/<[^>]+>/g) ?? references?.split(/\s+/) ?? [];
+  return [...new Set([inReplyTo, ...refs].filter((value): value is string => Boolean(value)))].reverse().slice(0, 30);
+}
+
+async function resolveThreadId(env: Env, inReplyTo: string | null, references: string | null): Promise<string> {
+  for (const candidate of referenceCandidates(inReplyTo, references)) {
+    const match = await env.DB.prepare("SELECT thread_id FROM messages WHERE message_id = ?1 LIMIT 1").bind(candidate).first<{ thread_id: string }>();
+    if (match) return match.thread_id;
+  }
+  return crypto.randomUUID();
 }
 
 function reject(message: ForwardableEmailMessage, reason: string): void {
@@ -69,14 +86,15 @@ export async function receiveEmail(message: ForwardableEmailMessage, env: Env, c
   const id = crypto.randomUUID();
   const now = new Date();
   const nowIso = now.toISOString();
-  const headerMessageId = parsed.messageId?.slice(0, 998) || `<${id}@email.liamthemo.com>`;
-  const inReplyTo = parsed.inReplyTo;
-  const references = parsed.references || null;
+  const headerMessageId = (parsed.messageId?.trim() || message.headers.get("message-id")?.trim() || `<${id}@email.liamthemo.com>`).slice(0, 998);
+  if (await env.DB.prepare("SELECT 1 FROM messages WHERE message_id = ?1 LIMIT 1").bind(headerMessageId).first()) return;
+  const inReplyTo = (parsed.inReplyTo?.trim() || message.headers.get("in-reply-to")?.trim() || null)?.slice(0, 998) || null;
+  const references = (parsed.references?.trim() || message.headers.get("references")?.trim() || null)?.slice(0, 8192) || null;
   const sender = parsed.from;
   const to = addresses(parsed.to);
   const cc = addresses(parsed.cc);
-  const bodyText = truncateUtf8(parsed.text || "", MAX_STORED_TEXT);
-  const threadId = crypto.randomUUID();
+  const bodyText = truncateUtf8(parsed.text?.trim() || (parsed.html ? htmlToText(parsed.html) : ""), MAX_STORED_TEXT);
+  const threadId = await resolveThreadId(env, inReplyTo, references);
   const key = `emails/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, "0")}/${String(now.getUTCDate()).padStart(2, "0")}/${id}/raw.eml`;
   const rows: Array<{ id: string; filename: string; mimeType: string; size: number; key: string }> = [];
 
@@ -91,7 +109,7 @@ export async function receiveEmail(message: ForwardableEmailMessage, env: Env, c
     }
     await env.DB.batch([
       env.DB.prepare("INSERT OR IGNORE INTO threads (id, subject, latest_message_at, message_count, is_read) VALUES (?1, ?2, ?3, 0, 0)").bind(threadId, (parsed.subject || "(no subject)").slice(0, 998), nowIso),
-      env.DB.prepare(`INSERT INTO messages (id,message_id,thread_id,direction,from_address,from_name,to_addresses,cc_addresses,subject,preview,body_text,body_html,received_at,has_attachments,raw_r2_key,in_reply_to,reference_ids,delivery_status) VALUES (?1,?2,?3,'inbound',?4,?5,?6,?7,?8,?9,?10,NULL,?11,?12,?13,?14,?15,'received')`).bind(id, headerMessageId, threadId, (sender?.address || message.from).slice(0, 320), sender?.name?.slice(0, 320) || null, JSON.stringify(to.length ? to : [message.to]), JSON.stringify(cc), (parsed.subject || "(no subject)").slice(0, 998), safePreview(bodyText), bodyText, nowIso, rows.length ? 1 : 0, key, inReplyTo?.slice(0, 998) || null, references?.slice(0, 8192) || null),
+      env.DB.prepare(`INSERT INTO messages (id,message_id,thread_id,direction,from_address,from_name,to_addresses,cc_addresses,subject,preview,body_text,body_html,received_at,has_attachments,raw_r2_key,in_reply_to,reference_ids,delivery_status) VALUES (?1,?2,?3,'inbound',?4,?5,?6,?7,?8,?9,?10,NULL,?11,?12,?13,?14,?15,'received')`).bind(id, headerMessageId, threadId, (sender?.address || message.from).slice(0, 320), sender?.name?.slice(0, 320) || null, JSON.stringify(to.length ? to : [message.to]), JSON.stringify(cc), (parsed.subject || "(no subject)").slice(0, 998), safePreview(bodyText), bodyText, nowIso, rows.length ? 1 : 0, key, inReplyTo, references),
       ...rows.map(attachment => env.DB.prepare("INSERT INTO attachments (id,message_id,filename,content_type,size,r2_key) VALUES (?1,?2,?3,?4,?5,?6)").bind(attachment.id, id, attachment.filename, attachment.mimeType, attachment.size, attachment.key)),
       env.DB.prepare("UPDATE threads SET latest_message_at=?2,message_count=message_count+1,is_read=0,subject=CASE WHEN subject='' THEN ?3 ELSE subject END WHERE id=?1").bind(threadId, nowIso, (parsed.subject || "(no subject)").slice(0, 998)),
     ]);
