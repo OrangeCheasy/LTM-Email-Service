@@ -1,3 +1,4 @@
+import { getConnectedAccounts } from "./api/accounts";
 import { previewAttachment } from "./api/attachments";
 import { deleteDraft, getDraft, saveDraft } from "./api/drafts";
 import { healthResponse } from "./api/health";
@@ -47,6 +48,7 @@ async function routeApi(request: Request, env: Env, url: URL): Promise<Response>
   if (url.pathname === "/api/auth/logout" && request.method === "POST") return logout(request, env);
   if (!(await isAuthenticated(request, env))) return unauthorizedResponse();
   if (url.pathname === "/api/health" && request.method === "GET") return healthResponse(env);
+  if (url.pathname === "/api/accounts" && request.method === "GET") return getConnectedAccounts(env);
   if (url.pathname === "/api/messages" && request.method === "GET") return listMessages(request, env);
   if (url.pathname === "/api/send" && request.method === "POST") return sendEmail(request, env);
   if (url.pathname === "/api/drafts" && request.method === "POST") return saveDraft(request, env);
