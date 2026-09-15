@@ -43,6 +43,11 @@ jobs:
               printf '\n\n'
             done
           } > src/client/ui-overrides.css
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('src/client/ui-overrides.css')
+          path.write_text(path.read_text().rstrip() + '\n')
+          PY
           rm "${files[@]}"
 
       - name: Commit consolidation
