@@ -1,4 +1,4 @@
-import type { MessageListItem } from "./mailTypes";
+import type { MessageListItem, NotificationState } from "./mailTypes";
 
 export function formatDate(value: string): string {
   const date = new Date(value);
@@ -36,6 +36,18 @@ export function senderLabel(message: MessageListItem): string {
 
 export function senderInitial(message: MessageListItem): string {
   return senderLabel(message).trim().slice(0, 1).toUpperCase() || "?";
+}
+
+export function notificationLabel(state: NotificationState): string {
+  switch (state) {
+    case "on": return "Notifications on";
+    case "off": return "Enable notifications";
+    case "blocked": return "Notifications blocked";
+    case "unsupported": return "Notifications unavailable";
+    case "unconfigured": return "Notification setup needed";
+    case "working": return "Updating notifications";
+    default: return "Checking notifications";
+  }
 }
 
 export function replySubject(subject: string): string {
