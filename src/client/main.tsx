@@ -7,7 +7,6 @@ import "./styles.css";
 import "./dark.css";
 import "./ui-overrides.css";
 import "./mobile-accounts.css";
-import "./auth-two-factor.css";
 
 installMailFetchCache();
 const root = document.getElementById("root");
