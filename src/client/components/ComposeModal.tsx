@@ -1,5 +1,5 @@
 import type { FormEvent } from "react";
-import type { ComposeState } from "../mailTypes";
+import type { ComposeState, ConnectedAccount } from "../mailTypes";
 import { Icon } from "./Icon";
 
 type ComposeModalProps = {
@@ -8,6 +8,9 @@ type ComposeModalProps = {
   files: File[];
   sending: boolean;
   draftStatus: "saving" | "saved" | null;
+  accounts: ConnectedAccount[];
+  senderAccountId: string;
+  onSenderAccountChange: (accountId: string) => void;
   onChange: (next: ComposeState) => void;
   onFilesChange: (files: File[]) => void;
   onClose: () => void;
@@ -15,10 +18,44 @@ type ComposeModalProps = {
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 };
 
-export function ComposeModal({ open, compose, files, sending, draftStatus, onChange, onFilesChange, onClose, onDiscard, onSubmit }: ComposeModalProps) {
+const fallbackAccount: ConnectedAccount = {
+  id: "native:primary",
+  provider: "native",
+  emailAddress: "contact@liamthemo.com",
+  displayName: "LTM Email",
+  avatarUrl: null,
+  status: "active",
+  lastSyncedAt: null,
+};
+
+function senderLabel(account: ConnectedAccount) {
+  const provider = account.provider === "native" ? "Custom" : "Gmail";
+  const status = account.status === "active" ? "" : " — reconnect required";
+  return `${account.emailAddress} (${provider})${status}`;
+}
+
+export function ComposeModal({
+  open,
+  compose,
+  files,
+  sending,
+  draftStatus,
+  accounts,
+  senderAccountId,
+  onSenderAccountChange,
+  onChange,
+  onFilesChange,
+  onClose,
+  onDiscard,
+  onSubmit,
+}: ComposeModalProps) {
   if (!open) return null;
 
   const mode = compose.replyToMessageId ? "Reply" : compose.forwardMessageId ? "Forward" : "New message";
+  const senderLocked = Boolean(compose.replyToMessageId || compose.forwardMessageId);
+  const senderOptions = accounts.length ? accounts : [fallbackAccount];
+  const activeSenderCount = senderOptions.filter((account) => account.status === "active").length;
+  const currentSender = senderOptions.find((account) => account.id === senderAccountId) ?? fallbackAccount;
 
   return (
     <div className="compose-overlay" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target && !sending) onClose(); }}>
@@ -37,6 +74,20 @@ export function ComposeModal({ open, compose, files, sending, draftStatus, onCha
         </header>
 
         <div className="compose-fields">
+          <label title={senderLocked ? "Replies and forwards stay with the mailbox they were opened from." : undefined}>
+            <span>From</span>
+            <select
+              aria-label="From address"
+              value={currentSender.id}
+              disabled={sending || senderLocked || activeSenderCount < 2}
+              onChange={(event) => onSenderAccountChange(event.target.value)}
+              style={{ width: "100%", border: 0, outline: 0, background: "transparent", color: "var(--text)", fontSize: 12, fontFamily: "inherit" }}
+            >
+              {senderOptions.map((account) => (
+                <option key={account.id} value={account.id} disabled={account.status !== "active"}>{senderLabel(account)}</option>
+              ))}
+            </select>
+          </label>
           <label><span>To</span><input required autoFocus value={compose.to} onChange={(event) => onChange({ ...compose, to: event.target.value })} placeholder="name@example.com" /></label>
           <div className="compose-inline-fields">
             <label><span>Cc</span><input value={compose.cc} onChange={(event) => onChange({ ...compose, cc: event.target.value })} /></label>
@@ -57,7 +108,7 @@ export function ComposeModal({ open, compose, files, sending, draftStatus, onCha
 
         <footer className="compose-footer">
           <label className="attach-control"><Icon name="paperclip" size={16} /><span>Attach</span><input type="file" multiple onChange={(event) => onFilesChange(Array.from(event.target.files ?? []))} /></label>
-          <span className="compose-from">{draftStatus === "saving" ? "Saving draft…" : draftStatus === "saved" ? "Draft saved" : "From contact@liamthemo.com"}</span>
+          <span className="compose-from">{draftStatus === "saving" ? "Saving draft…" : draftStatus === "saved" ? "Draft saved" : `Sending as ${currentSender.emailAddress}`}</span>
           <button className="send-control" type="submit" disabled={sending}><Icon name="send" size={15} />{sending ? "Sending…" : "Send"}</button>
         </footer>
       </form>
