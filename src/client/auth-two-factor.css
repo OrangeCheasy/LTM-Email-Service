@@ -1,0 +1,22 @@
+.auth-secondary {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.auth-secondary:hover {
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+
+.auth-secondary:disabled {
+  opacity: .55;
+  cursor: default;
+}
