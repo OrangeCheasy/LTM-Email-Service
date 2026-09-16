@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { buildSafeEmailDocument } from "../emailHtml";
 import type { MessageDetail } from "../mailTypes";
 import { formatBytes, formatFullDate, senderLabel } from "../mailUtils";
 import { AttachmentPreview } from "./AttachmentPreview";
@@ -23,6 +24,33 @@ function messageSecondary(message: MessageDetail): string {
   return message.direction === "outbound"
     ? `to ${message.toAddresses.join(", ") || "Unknown recipient"}`
     : message.fromName ? message.fromAddress : `to ${message.toAddresses.join(", ") || "you"}`;
+}
+
+function RichEmailBody({ html }: { html: string }) {
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  const srcDoc = useMemo(() => buildSafeEmailDocument(html), [html]);
+
+  const resizeFrame = () => {
+    const frame = frameRef.current;
+    const document = frame?.contentDocument;
+    if (!frame || !document) return;
+    requestAnimationFrame(() => {
+      const height = Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight ?? 0, 120);
+      frame.style.height = `${Math.min(height + 8, 12000)}px`;
+    });
+  };
+
+  return (
+    <iframe
+      ref={frameRef}
+      className="rich-email-frame"
+      title="Email content"
+      srcDoc={srcDoc}
+      sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+      referrerPolicy="no-referrer"
+      onLoad={resizeFrame}
+    />
+  );
 }
 
 export function MessageReader({ message, thread, loading = false, onBack, onReply, onForward, onPatch }: MessageReaderProps) {
@@ -92,9 +120,9 @@ export function MessageReader({ message, thread, loading = false, onBack, onRepl
             {item.deliveryStatus === "failed" ? <div className="delivery-error">Delivery failed: {item.deliveryError}</div> : null}
 
             <div className="message-content">
-              <pre>{item.bodyText || "(No readable text content)"}</pre>
+              {item.bodyHtml ? <RichEmailBody html={item.bodyHtml}/> : <pre>{item.bodyText || "(No readable text content)"}</pre>}
               {item.bodyHtmlAvailable ? (
-                <div className="security-note"><Icon name="lock" size={14}/><span>HTML is rendered safely. Remote tracking images stay blocked.</span></div>
+                <div className="security-note"><Icon name="lock" size={14}/><span>Rich email displayed safely. Links work; remote tracking images stay blocked.</span></div>
               ) : null}
             </div>
 
