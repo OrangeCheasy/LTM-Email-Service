@@ -1,6 +1,68 @@
-export type MailProviderKind="native"|"gmail";export type MailFolder="inbox"|"starred"|"sent"|"archive"|"trash";
-export type ProviderMessage={id:string;threadId:string;direction:"inbound"|"outbound";fromAddress:string;fromName:string|null;senderAvatarUrl?:string|null;toAddresses:string[];subject:string;preview:string;receivedAt:string;sentAt:string|null;isRead:boolean;isStarred:boolean;isArchived:boolean;isDeleted:boolean;hasAttachments:boolean;deliveryStatus:string|null;isDraft:false};
-export type ProviderListOptions={folder:MailFolder;search:string;limit:number};export type ProviderMutation=Partial<{isRead:boolean;isStarred:boolean;isArchived:boolean;isDeleted:boolean}>;
-export type ProviderSendInput={to:string[];cc:string[];bcc:string[];subject:string;text:string;headers?:Record<string,string>;threadId?:string|null;attachments:Array<{filename:string;type:string;content:ArrayBuffer}>};
-export type ProviderSendResult={providerMessageId:string|null};
-export interface MailProvider{readonly kind:MailProviderKind;readonly accountId:string;readonly address:string;listMessages(options:ProviderListOptions):Promise<ProviderMessage[]>;getMessage(id:string):Promise<ProviderMessage|null>;patchMessage(id:string,mutation:ProviderMutation):Promise<boolean>;sendMessage(input:ProviderSendInput):Promise<ProviderSendResult>}
+export type MailProviderKind = "native" | "gmail";
+export type MailFolder = "inbox" | "starred" | "sent" | "archive" | "trash";
+
+export type ProviderMessage = {
+  id: string;
+  threadId: string;
+  direction: "inbound" | "outbound";
+  fromAddress: string;
+  fromName: string | null;
+  senderAvatarUrl?: string | null;
+  toAddresses: string[];
+  subject: string;
+  preview: string;
+  receivedAt: string;
+  sentAt: string | null;
+  isRead: boolean;
+  isStarred: boolean;
+  isArchived: boolean;
+  isDeleted: boolean;
+  hasAttachments: boolean;
+  deliveryStatus: string | null;
+  isDraft: false;
+};
+
+export type ProviderListOptions = {
+  folder: MailFolder;
+  search: string;
+  limit: number;
+};
+
+export type ProviderMutation = Partial<{
+  isRead: boolean;
+  isStarred: boolean;
+  isArchived: boolean;
+  isDeleted: boolean;
+}>;
+
+export type ProviderAttachment = {
+  filename: string;
+  type: string;
+  content: ArrayBuffer;
+};
+
+export type ProviderSendInput = {
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  text: string;
+  headers?: Record<string, string>;
+  threadId?: string | null;
+  attachments: ProviderAttachment[];
+};
+
+export type ProviderSendResult = {
+  providerMessageId: string | null;
+};
+
+export interface MailProvider {
+  readonly kind: MailProviderKind;
+  readonly accountId: string;
+  readonly address: string;
+
+  listMessages(options: ProviderListOptions): Promise<ProviderMessage[]>;
+  getMessage(id: string): Promise<ProviderMessage | null>;
+  patchMessage(id: string, mutation: ProviderMutation): Promise<boolean>;
+  sendMessage(input: ProviderSendInput): Promise<ProviderSendResult>;
+}
