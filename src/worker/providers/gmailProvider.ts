@@ -47,7 +47,6 @@ const decodeBytes = (value: string) => {
   for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
   return bytes;
 };
-const decode = (value: string) => new TextDecoder().decode(decodeBytes(value));
 const header = (message: GmailMessage, name: string) => message.payload?.headers?.find((entry) => entry.name?.toLowerCase() === name.toLowerCase())?.value ?? "";
 const partHeader = (part: Part, name: string) => part.headers?.find((entry) => entry.name?.toLowerCase() === name.toLowerCase())?.value ?? "";
 const addr = (value: string) => {
