@@ -121,7 +121,14 @@ export async function receiveEmail(message: ForwardableEmailMessage, env: Env, c
     return;
   }
 
-  ctx.waitUntil(sendNewMailPush(env, { id }));
+  ctx.waitUntil(sendNewMailPush(env, {
+    id,
+    subject: parsed.subject || "(no subject)",
+    fromAddress: sender?.address || message.from,
+    fromName: sender?.name || null,
+    toAddress: message.to,
+    preview: safePreview(bodyText),
+  }));
   const forwardTo = env.FORWARD_TO.trim();
   if (forwardTo) ctx.waitUntil(message.forward(forwardTo));
 }
