@@ -1,1 +1,81 @@
-const VERSION="v1";const enc=new TextEncoder(),dec=new TextDecoder();function b64(bytes:Uint8Array){let s="";for(const b of bytes)s+=String.fromCharCode(b);return btoa(s).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/g,"")}function unb64(s:string){s=s.replace(/-/g,"+").replace(/_/g,"/");while(s.length%4)s+="=";return Uint8Array.from(atob(s),c=>c.charCodeAt(0))}function ab(bytes:Uint8Array):ArrayBuffer{return Uint8Array.from(bytes).buffer}async function key(env:Env){if(!env.PROVIDER_CREDENTIAL_KEY)throw new Error("Provider credential encryption is not configured");let raw:Uint8Array;try{raw=unb64(env.PROVIDER_CREDENTIAL_KEY)}catch{throw new Error("Provider credential encryption key is invalid")}if(raw.byteLength!==32)throw new Error("Provider credential encryption key is invalid");return crypto.subtle.importKey("raw",ab(raw),{name:"AES-GCM"},false,["encrypt","decrypt"])}export async function encryptSecret(env:Env,value:unknown,aad:string){const iv=crypto.getRandomValues(new Uint8Array(12)),cipher=await crypto.subtle.encrypt({name:"AES-GCM",iv:ab(iv),additionalData:ab(enc.encode(aad))},await key(env),ab(enc.encode(JSON.stringify(value))));return`${VERSION}.${b64(iv)}.${b64(new Uint8Array(cipher))}`}export async function decryptSecret<T>(env:Env,envelope:string,aad:string):Promise<T>{const[v,iv,cipher,...rest]=envelope.split(".");if(v!==VERSION||!iv||!cipher||rest.length)throw new Error("Encrypted credential envelope is invalid");const plain=await crypto.subtle.decrypt({name:"AES-GCM",iv:ab(unb64(iv)),additionalData:ab(enc.encode(aad))},await key(env),ab(unb64(cipher)));return JSON.parse(dec.decode(plain)) as T}
+const VERSION = "v1";
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+
+function toBase64Url(bytes: Uint8Array): string {
+  let value = "";
+  for (const byte of bytes) value += String.fromCharCode(byte);
+  return btoa(value)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+function fromBase64Url(value: string): Uint8Array {
+  let normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  while (normalized.length % 4) normalized += "=";
+  return Uint8Array.from(atob(normalized), (character) => character.charCodeAt(0));
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  return Uint8Array.from(bytes).buffer;
+}
+
+async function credentialKey(env: Env): Promise<CryptoKey> {
+  if (!env.PROVIDER_CREDENTIAL_KEY) {
+    throw new Error("Provider credential encryption is not configured");
+  }
+
+  let raw: Uint8Array;
+  try {
+    raw = fromBase64Url(env.PROVIDER_CREDENTIAL_KEY);
+  } catch {
+    throw new Error("Provider credential encryption key is invalid");
+  }
+
+  if (raw.byteLength !== 32) {
+    throw new Error("Provider credential encryption key is invalid");
+  }
+
+  return crypto.subtle.importKey(
+    "raw",
+    toArrayBuffer(raw),
+    { name: "AES-GCM" },
+    false,
+    ["encrypt", "decrypt"],
+  );
+}
+
+export async function encryptSecret(env: Env, value: unknown, aad: string): Promise<string> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await crypto.subtle.encrypt(
+    {
+      name: "AES-GCM",
+      iv: toArrayBuffer(iv),
+      additionalData: toArrayBuffer(encoder.encode(aad)),
+    },
+    await credentialKey(env),
+    toArrayBuffer(encoder.encode(JSON.stringify(value))),
+  );
+
+  return `${VERSION}.${toBase64Url(iv)}.${toBase64Url(new Uint8Array(ciphertext))}`;
+}
+
+export async function decryptSecret<T>(env: Env, envelope: string, aad: string): Promise<T> {
+  const [version, iv, ciphertext, ...rest] = envelope.split(".");
+  if (version !== VERSION || !iv || !ciphertext || rest.length) {
+    throw new Error("Encrypted credential envelope is invalid");
+  }
+
+  const plaintext = await crypto.subtle.decrypt(
+    {
+      name: "AES-GCM",
+      iv: toArrayBuffer(fromBase64Url(iv)),
+      additionalData: toArrayBuffer(encoder.encode(aad)),
+    },
+    await credentialKey(env),
+    toArrayBuffer(fromBase64Url(ciphertext)),
+  );
+
+  return JSON.parse(decoder.decode(plaintext)) as T;
+}

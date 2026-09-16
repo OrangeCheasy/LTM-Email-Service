@@ -1,4 +1,58 @@
 import { getGoogleAccessToken } from "../providers/googleCredentials";
-const ALLOWED=new Set(["image/jpeg","image/png","image/webp"]),MAX=2*1024*1024;
-function googleImageHost(host:string){return host==="lh3.googleusercontent.com"||host.endsWith(".googleusercontent.com")}
-export async function getAccountAvatar(accountId:string,env:Env):Promise<Response>{if(!accountId.startsWith("gmail:"))return new Response(null,{status:404});const row=await env.DB.prepare("SELECT status FROM connected_accounts WHERE id=?1 AND provider='gmail' LIMIT 1").bind(accountId).first<{status:string}>();if(!row||row.status!=="active")return new Response(null,{status:404});try{const token=await getGoogleAccessToken(env,accountId);const user=await fetch("https://people.googleapis.com/v1/people/me?personFields=photos",{headers:{Authorization:`Bearer ${token}`}});if(!user.ok)return new Response(null,{status:404});const info=await user.json<{photos?:Array<{url?:string;default?:boolean}>}>(),photo=info.photos?.find(p=>p.url&&!p.default)??info.photos?.find(p=>p.url);if(!photo?.url)return new Response(null,{status:404});let picture=new URL(photo.url);if(picture.protocol!=="https:"||!googleImageHost(picture.hostname))return new Response(null,{status:404});let image=await fetch(picture.toString(),{redirect:"manual"});if(image.status>=300&&image.status<400){const location=image.headers.get("Location");if(!location)return new Response(null,{status:404});picture=new URL(location,picture);if(picture.protocol!=="https:"||!googleImageHost(picture.hostname))return new Response(null,{status:404});image=await fetch(picture.toString(),{redirect:"error"})}if(!image.ok)return new Response(null,{status:404});const type=(image.headers.get("Content-Type")??"").split(";")[0].trim().toLowerCase(),declared=Number(image.headers.get("Content-Length")??0);if(!ALLOWED.has(type)||(declared&&declared>MAX))return new Response(null,{status:404});const bytes=await image.arrayBuffer();if(bytes.byteLength>MAX)return new Response(null,{status:404});return new Response(bytes,{headers:{"Content-Type":type,"Content-Length":String(bytes.byteLength),"Cache-Control":"private, max-age=3600","X-Content-Type-Options":"nosniff"}})}catch{return new Response(null,{status:404})}}
+import {
+  googleImageResponse,
+  isAllowedGoogleImageUrl,
+  readValidatedGoogleImage,
+} from "../providers/googleImages";
+
+type GooglePerson = {
+  photos?: Array<{ url?: string; default?: boolean }>;
+};
+
+const notFound = () => new Response(null, { status: 404 });
+
+export async function getAccountAvatar(accountId: string, env: Env): Promise<Response> {
+  if (!accountId.startsWith("gmail:")) return notFound();
+
+  const account = await env.DB.prepare(`
+    SELECT status
+    FROM connected_accounts
+    WHERE id = ?1 AND provider = 'gmail'
+    LIMIT 1
+  `)
+    .bind(accountId)
+    .first<{ status: string }>();
+  if (!account || account.status !== "active") return notFound();
+
+  try {
+    const token = await getGoogleAccessToken(env, accountId);
+    const profileResponse = await fetch(
+      "https://people.googleapis.com/v1/people/me?personFields=photos",
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!profileResponse.ok) return notFound();
+
+    const profile = await profileResponse.json<GooglePerson>();
+    const photo = profile.photos?.find((entry) => entry.url && !entry.default)
+      ?? profile.photos?.find((entry) => entry.url);
+    if (!photo?.url) return notFound();
+
+    let photoUrl = new URL(photo.url);
+    if (!isAllowedGoogleImageUrl(photoUrl)) return notFound();
+
+    let imageResponse = await fetch(photoUrl.toString(), { redirect: "manual" });
+    if (imageResponse.status >= 300 && imageResponse.status < 400) {
+      const location = imageResponse.headers.get("Location");
+      if (!location) return notFound();
+
+      photoUrl = new URL(location, photoUrl);
+      if (!isAllowedGoogleImageUrl(photoUrl)) return notFound();
+      imageResponse = await fetch(photoUrl.toString(), { redirect: "error" });
+    }
+
+    const image = await readValidatedGoogleImage(imageResponse);
+    return image ? googleImageResponse(image) : notFound();
+  } catch {
+    return notFound();
+  }
+}
