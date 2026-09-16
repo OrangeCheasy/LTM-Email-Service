@@ -13,7 +13,7 @@
 /manifest.webmanifest
   Cache-Control: no-cache
 
-/favicon.png
+/browser-tab-icon-v17.png
   Cache-Control: no-store, max-age=0
 
 /favicon.ico
