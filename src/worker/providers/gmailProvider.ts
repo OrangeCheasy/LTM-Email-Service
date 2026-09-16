@@ -1,3 +1,4 @@
+import { sanitizeEmailHtml } from "../email/html";
 import { getGoogleAccessToken } from "./googleCredentials";
 import type { MailProvider, ProviderListOptions, ProviderMessage, ProviderMutation, ProviderSendInput, ProviderSendResult } from "./types";
 
@@ -5,7 +6,12 @@ const API = "https://gmail.googleapis.com/gmail/v1/users/me";
 const MAX_PARTS = 100;
 const MAX_DEPTH = 20;
 const MAX_ATTACHMENT = 4_000_000;
+const MAX_BODY_BYTES = 2_000_000;
+const MAX_INLINE_IMAGE_BYTES = 1_500_000;
+const MAX_INLINE_IMAGE_TOTAL = 3_000_000;
+const MAX_INLINE_IMAGES = 8;
 const METADATA_CONCURRENCY = 10;
+const BODY_CONCURRENCY = 4;
 
 type Header = { name?: string; value?: string };
 type Part = {
@@ -43,6 +49,7 @@ const decodeBytes = (value: string) => {
 };
 const decode = (value: string) => new TextDecoder().decode(decodeBytes(value));
 const header = (message: GmailMessage, name: string) => message.payload?.headers?.find((entry) => entry.name?.toLowerCase() === name.toLowerCase())?.value ?? "";
+const partHeader = (part: Part, name: string) => part.headers?.find((entry) => entry.name?.toLowerCase() === name.toLowerCase())?.value ?? "";
 const addr = (value: string) => {
   const match = value.match(/^(.*?)\s*<([^>]+)>$/);
   return match
@@ -53,28 +60,39 @@ const addresses = (value: string) => value.split(",").map((entry) => addr(entry)
 
 function parts(part: Part | undefined, out: Part[] = [], depth = 0) {
   if (!part || depth > MAX_DEPTH || out.length >= MAX_PARTS) return out;
-  if (part.mimeType?.startsWith("text/") || part.filename || part.body?.attachmentId) out.push(part);
+  if (part.mimeType?.startsWith("text/") || part.mimeType?.startsWith("image/") || part.filename || part.body?.attachmentId) out.push(part);
   for (const child of part.parts ?? []) parts(child, out, depth + 1);
   return out;
 }
 
-function text(message: GmailMessage) {
-  const all = parts(message.payload);
-  const plain = all.find((part) => part.mimeType === "text/plain" && part.body?.data);
-  const html = all.find((part) => part.mimeType === "text/html" && part.body?.data);
-  const raw = plain?.body?.data
-    ? decode(plain.body.data)
-    : html?.body?.data
-      ? decode(html.body.data)
-        .replace(/<style[\s\S]*?<\/style>/gi, "")
-        .replace(/<script[\s\S]*?<\/script>/gi, "")
-        .replace(/<[^>]+>/g, " ")
-        .replace(/&nbsp;/g, " ")
-        .replace(/&amp;/g, "&")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-      : "";
-  return raw.replace(/\s+\n/g, "\n").trim().slice(0, 2_000_000);
+function htmlToText(html: string) {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<\s*br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|li|tr|h[1-6])\s*>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n\s*\n\s*\n+/g, "\n\n")
+    .trim();
+}
+
+function truncateText(value: string, max = MAX_BODY_BYTES) {
+  if (enc.encode(value).byteLength <= max) return value;
+  let low = 0;
+  let high = value.length;
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    if (enc.encode(value.slice(0, mid)).byteLength <= max) low = mid;
+    else high = mid - 1;
+  }
+  return value.slice(0, low);
 }
 
 function item(message: GmailMessage): ProviderMessage {
@@ -169,6 +187,80 @@ async function call(env: Env, accountId: string, path: string, init: RequestInit
   return response;
 }
 
+async function partBytes(env: Env, accountId: string, messageId: string, part: Part, maxBytes: number): Promise<Uint8Array | null> {
+  try {
+    if ((part.body?.size ?? 0) > maxBytes) return null;
+    if (part.body?.data) {
+      const bytes = decodeBytes(part.body.data);
+      return bytes.byteLength <= maxBytes ? bytes : null;
+    }
+    const attachmentId = part.body?.attachmentId;
+    if (!attachmentId) return null;
+    const response = await (await call(
+      env,
+      accountId,
+      `/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`,
+    )).json<{ data?: string; size?: number }>();
+    if ((response.size ?? 0) > maxBytes || !response.data) return null;
+    const bytes = decodeBytes(response.data);
+    return bytes.byteLength <= maxBytes ? bytes : null;
+  } catch {
+    return null;
+  }
+}
+
+async function partText(env: Env, accountId: string, messageId: string, part: Part | undefined): Promise<string> {
+  if (!part) return "";
+  const bytes = await partBytes(env, accountId, messageId, part, MAX_BODY_BYTES);
+  return bytes ? new TextDecoder().decode(bytes) : "";
+}
+
+const regexEscape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+async function resolveInlineImages(env: Env, accountId: string, messageId: string, message: GmailMessage, html: string) {
+  const candidates = parts(message.payload)
+    .filter((part) => part.mimeType?.startsWith("image/") && partHeader(part, "Content-ID"))
+    .slice(0, MAX_INLINE_IMAGES);
+  if (!candidates.length) return html;
+
+  const loaded = await mapLimit(candidates, 3, async (part) => {
+    const contentId = partHeader(part, "Content-ID").trim().replace(/^<|>$/g, "");
+    const bytes = await partBytes(env, accountId, messageId, part, MAX_INLINE_IMAGE_BYTES);
+    return contentId && bytes
+      ? { contentId, mimeType: part.mimeType || "image/png", bytes }
+      : null;
+  });
+
+  let total = 0;
+  let next = html;
+  for (const image of loaded) {
+    if (!image || total + image.bytes.byteLength > MAX_INLINE_IMAGE_TOTAL) continue;
+    total += image.bytes.byteLength;
+    const dataUrl = `data:${image.mimeType};base64,${bytesToBase64(image.bytes)}`;
+    const ids = new Set([image.contentId, encodeURIComponent(image.contentId)]);
+    for (const id of ids) next = next.replace(new RegExp(`cid:${regexEscape(id)}`, "gi"), dataUrl);
+  }
+  return next;
+}
+
+async function messageBody(env: Env, accountId: string, message: GmailMessage) {
+  const messageId = message.id ?? "";
+  const all = parts(message.payload);
+  const plainPart = all.find((part) => part.mimeType === "text/plain" && (part.body?.data || part.body?.attachmentId));
+  const htmlPart = all.find((part) => part.mimeType === "text/html" && (part.body?.data || part.body?.attachmentId));
+  const [plain, rawHtml] = await Promise.all([
+    partText(env, accountId, messageId, plainPart),
+    partText(env, accountId, messageId, htmlPart),
+  ]);
+
+  const htmlWithInlineImages = rawHtml
+    ? await resolveInlineImages(env, accountId, messageId, message, rawHtml)
+    : "";
+  const bodyHtml = htmlWithInlineImages ? truncateText(sanitizeEmailHtml(htmlWithInlineImages)) || null : null;
+  const bodyText = truncateText((plain || (rawHtml ? htmlToText(rawHtml) : "")).replace(/\s+\n/g, "\n").trim());
+  return { bodyText, bodyHtml };
+}
+
 const q = (folder: string) => folder === "inbox"
   ? "in:inbox"
   : folder === "starred"
@@ -184,6 +276,7 @@ const q = (folder: string) => folder === "inbox"
 export async function gmailFullMessage(env: Env, accountId: string, id: string, _includePhotos = false) {
   const raw = await (await call(env, accountId, `/messages/${encodeURIComponent(id)}?format=full`)).json<GmailMessage>();
   const base = item(raw);
+  const body = await messageBody(env, accountId, raw);
   const attachments = parts(raw.payload)
     .filter((part) => part.filename && part.body?.attachmentId)
     .map((part) => ({
@@ -196,8 +289,9 @@ export async function gmailFullMessage(env: Env, accountId: string, id: string, 
     ...base,
     ccAddresses: addresses(header(raw, "Cc")),
     bccAddresses: addresses(header(raw, "Bcc")),
-    bodyText: text(raw) || base.preview,
-    bodyHtmlAvailable: false,
+    bodyText: body.bodyText || base.preview,
+    bodyHtml: body.bodyHtml,
+    bodyHtmlAvailable: Boolean(body.bodyHtml),
     inReplyTo: header(raw, "In-Reply-To") || null,
     references: header(raw, "References") || null,
     messageId: header(raw, "Message-ID") || null,
@@ -210,14 +304,16 @@ export async function gmailThread(env: Env, accountId: string, threadId: string,
   const thread = await (await call(env, accountId, `/threads/${encodeURIComponent(threadId)}?format=full`)).json<{ messages?: GmailMessage[] }>();
   const raw = (thread.messages ?? []).slice(-100);
   const bases = raw.map(item);
-  return raw.map((message, index) => {
+  return mapLimit(raw, BODY_CONCURRENCY, async (message, index) => {
     const base = bases[index];
+    const body = await messageBody(env, accountId, message);
     return {
       ...base,
       ccAddresses: addresses(header(message, "Cc")),
       bccAddresses: addresses(header(message, "Bcc")),
-      bodyText: text(message) || base.preview,
-      bodyHtmlAvailable: false,
+      bodyText: body.bodyText || base.preview,
+      bodyHtml: body.bodyHtml,
+      bodyHtmlAvailable: Boolean(body.bodyHtml),
       inReplyTo: header(message, "In-Reply-To") || null,
       references: header(message, "References") || null,
       messageId: header(message, "Message-ID") || null,
@@ -259,14 +355,19 @@ export function gmailProvider(env: Env, accountId: string, email: string): MailP
         `/messages?maxResults=${Math.min(options.limit, 50)}&q=${encodeURIComponent(query)}`,
       )).json<{ messages?: Array<{ id: string }> }>();
       const refs = listing.messages ?? [];
-      return mapLimit(refs, METADATA_CONCURRENCY, async (entry) => {
-        const message = await (await call(
-          env,
-          accountId,
-          `/messages/${encodeURIComponent(entry.id)}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject`,
-        )).json<GmailMessage>();
-        return item(message);
+      const loaded = await mapLimit(refs, METADATA_CONCURRENCY, async (entry) => {
+        try {
+          const message = await (await call(
+            env,
+            accountId,
+            `/messages/${encodeURIComponent(entry.id)}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject`,
+          )).json<GmailMessage>();
+          return item(message);
+        } catch {
+          return null;
+        }
       });
+      return loaded.filter((entry): entry is ProviderMessage => Boolean(entry));
     },
 
     async getMessage(id) {
