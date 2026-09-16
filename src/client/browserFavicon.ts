@@ -15,7 +15,8 @@ const replaceFaviconLinks = (href: string, type: string) => {
   shortcutIcon.type = type || "image/png";
   shortcutIcon.href = href;
 
-  document.head.append(icon, shortcutIcon);
+  document.head.appendChild(icon);
+  document.head.appendChild(shortcutIcon);
 };
 
 const refreshBrowserFavicon = async () => {
