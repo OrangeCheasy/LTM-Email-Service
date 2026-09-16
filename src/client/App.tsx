@@ -1,5 +1,19 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { startRegistration } from "@simplewebauthn/browser";
+import {
+  AUTO_REFRESH_MS,
+  DETAIL_CACHE_MS,
+  EMPTY_COMPOSE,
+  FOLDERS,
+  NATIVE_ACCOUNT_ID,
+  base64UrlToArrayBuffer,
+  belongsInFolder,
+  draftSenderKey,
+  forwardedBody,
+  hasDraftContent,
+  notificationControlsDisabled,
+  type DetailCacheEntry,
+} from "./appModel";
 import { ComposeModal } from "./components/ComposeModal";
 import { MailList } from "./components/MailList";
 import { MessageReader } from "./components/MessageReader";
@@ -7,68 +21,16 @@ import { MobileNav } from "./components/MobileNav";
 import { ProfileModal } from "./components/ProfileModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { Sidebar } from "./components/Sidebar";
-import type { ComposeState, ConnectedAccount, DraftDetail, Folder, FolderDefinition, MessageDetail, MessageListItem, NotificationState } from "./mailTypes";
-import { formatFullDate, forwardSubject, replySubject } from "./mailUtils";
-
-const folders: FolderDefinition[] = [
-  { key: "inbox", label: "Inbox", icon: "inbox" },
-  { key: "starred", label: "Starred", icon: "star" },
-  { key: "sent", label: "Sent", icon: "send" },
-  { key: "drafts", label: "Drafts", icon: "draft" },
-  { key: "archive", label: "Archive", icon: "archive" },
-  { key: "trash", label: "Trash", icon: "trash" },
-];
-
-const emptyCompose: ComposeState = {
-  to: "",
-  cc: "",
-  bcc: "",
-  subject: "",
-  text: "",
-  replyToMessageId: "",
-  forwardMessageId: "",
-  draftId: "",
-};
-
-const AUTO_REFRESH_MS = 15_000;
-const DETAIL_CACHE_MS = 5 * 60_000;
-const DRAFT_SENDER_KEY_PREFIX = "ltm-draft-sender:";
-
-type DetailCacheEntry = { savedAt: number; message: MessageDetail; thread: MessageDetail[] };
-
-function base64UrlToArrayBuffer(value: string) {
-  const normalized = value.trim().replace(/\s+/g, "").replace(/=+$/g, "");
-  if (!/^[A-Za-z0-9_-]+$/.test(normalized)) throw new Error("Notification key is invalid.");
-  const base64 = (normalized + "=".repeat((4 - normalized.length % 4) % 4)).replace(/-/g, "+").replace(/_/g, "/");
-  const raw = atob(base64);
-  const buffer = new ArrayBuffer(raw.length);
-  const bytes = new Uint8Array(buffer);
-  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
-  return buffer;
-}
-
-const hasDraftContent = (compose: ComposeState) => Boolean(
-  compose.to.trim() || compose.cc.trim() || compose.bcc.trim() || compose.subject.trim() || compose.text.trim() || compose.replyToMessageId || compose.forwardMessageId,
-);
-
-const draftSenderKey = (draftId: string) => `${DRAFT_SENDER_KEY_PREFIX}${draftId}`;
-
-function forwardedBody(message: MessageDetail) {
-  const from = message.fromName ? `${message.fromName} <${message.fromAddress}>` : message.fromAddress;
-  const to = message.toAddresses.join(", ") || "undisclosed recipients";
-  return `\n\n---------- Forwarded message ----------\nFrom: ${from}\nDate: ${formatFullDate(message.sentAt || message.receivedAt)}\nSubject: ${message.subject || "(no subject)"}\nTo: ${to}\n\n${message.bodyText || ""}`;
-}
-
-function belongsInFolder(folder: Folder, message: MessageListItem) {
-  if (message.isDraft) return folder === "drafts";
-  if (folder === "trash") return message.isDeleted;
-  if (message.isDeleted) return false;
-  if (folder === "starred") return message.isStarred;
-  if (folder === "archive") return message.isArchived;
-  if (folder === "sent") return message.direction === "outbound";
-  if (folder === "inbox") return !message.isArchived;
-  return true;
-}
+import type {
+  ComposeState,
+  ConnectedAccount,
+  DraftDetail,
+  Folder,
+  MessageDetail,
+  MessageListItem,
+  NotificationState,
+} from "./mailTypes";
+import { forwardSubject, replySubject } from "./mailUtils";
 
 export function App() {
   const [folder, setFolder] = useState<Folder>("inbox");
@@ -82,15 +44,15 @@ export function App() {
   const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [composeOpen, setComposeOpen] = useState(false);
-  const [compose, setCompose] = useState<ComposeState>(emptyCompose);
-  const [composeAccountId, setComposeAccountId] = useState("native:primary");
+  const [compose, setCompose] = useState<ComposeState>(EMPTY_COMPOSE);
+  const [composeAccountId, setComposeAccountId] = useState(NATIVE_ACCOUNT_ID);
   const [files, setFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
   const [draftStatus, setDraftStatus] = useState<"saving" | "saved" | null>(null);
   const [notificationState, setNotificationState] = useState<NotificationState>("checking");
   const [pushPublicKey, setPushPublicKey] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<ConnectedAccount[]>([]);
-  const [activeAccountId, setActiveAccountId] = useState("native:primary");
+  const [activeAccountId, setActiveAccountId] = useState(NATIVE_ACCOUNT_ID);
   const [connectingGmail, setConnectingGmail] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -102,19 +64,30 @@ export function App() {
   const detailCache = useRef(new Map<string, DetailCacheEntry>());
   const openRequest = useRef(0);
 
-  const detailCacheKey = useCallback((id: string) => `${activeAccountId}:${id}`, [activeAccountId]);
+  const detailCacheKey = useCallback(
+    (id: string) => `${activeAccountId}:${id}`,
+    [activeAccountId],
+  );
 
   const refreshAccounts = useCallback(async () => {
     const response = await fetch("/api/accounts", { cache: "no-store" });
-    if (response.ok) setAccounts((await response.json() as { accounts: ConnectedAccount[] }).accounts);
+    if (response.ok) {
+      setAccounts((await response.json() as { accounts: ConnectedAccount[] }).accounts);
+    }
   }, []);
 
   useEffect(() => {
     void refreshAccounts();
     fetch("/api/profile", { cache: "no-store" })
-      .then(async (response) => response.ok ? response.json() as Promise<{ hasPhoto: boolean; version: string | null }> : null)
+      .then(async (response) => response.ok
+        ? response.json() as Promise<{ hasPhoto: boolean; version: string | null }>
+        : null)
       .then((profile) => {
-        if (profile?.hasPhoto) setProfilePhotoUrl(`/api/profile/photo?v=${encodeURIComponent(profile.version ?? "1")}`);
+        if (profile?.hasPhoto) {
+          setProfilePhotoUrl(
+            `/api/profile/photo?v=${encodeURIComponent(profile.version ?? "1")}`,
+          );
+        }
       })
       .catch(() => undefined);
   }, [refreshAccounts]);
@@ -123,7 +96,11 @@ export function App() {
     if (!settingsOpen) return;
     fetch("/api/auth/sessions", { cache: "no-store" })
       .then(async (response) => {
-        if (response.ok) setSessionCount((await response.json() as { sessions: unknown[] }).sessions.length);
+        if (response.ok) {
+          setSessionCount(
+            (await response.json() as { sessions: unknown[] }).sessions.length,
+          );
+        }
       })
       .catch(() => undefined);
   }, [settingsOpen]);
@@ -131,57 +108,98 @@ export function App() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+      if (
+        !("serviceWorker" in navigator)
+        || !("PushManager" in window)
+        || !("Notification" in window)
+      ) {
         setNotificationState("unsupported");
         return;
       }
+
       try {
         const response = await fetch("/api/push/config", { cache: "no-store" });
-        const config = await response.json() as { configured: boolean; publicKey: string | null };
+        const config = await response.json() as {
+          configured: boolean;
+          publicKey: string | null;
+        };
         if (!config.configured || !config.publicKey) {
           setNotificationState("unconfigured");
           return;
         }
+
         setPushPublicKey(config.publicKey);
-        const registration = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+        const registration = await navigator.serviceWorker.register("/sw.js", {
+          scope: "/",
+        });
         const subscription = await registration.pushManager.getSubscription();
-        if (!cancelled) setNotificationState(Notification.permission === "denied" ? "blocked" : subscription ? "on" : "off");
+        if (!cancelled) {
+          setNotificationState(
+            Notification.permission === "denied"
+              ? "blocked"
+              : subscription
+                ? "on"
+                : "off",
+          );
+        }
       } catch {
         if (!cancelled) setNotificationState("unsupported");
       }
     })();
-    return () => { cancelled = true; };
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const loadMessages = useCallback(async (activeFolder = folder, query = search, silent = false) => {
-    if (!silent) {
-      setLoading(true);
-      setError(null);
-    }
-    try {
-      const params = new URLSearchParams({ folder: activeFolder, accountId: activeAccountId });
-      if (query.trim()) params.set("q", query.trim());
-      const response = await fetch(`/api/messages?${params}`);
-      if (!response.ok) throw new Error("Could not load mail");
-      const data = await response.json() as { messages: MessageListItem[]; unreadCount: number; draftCount: number };
-      setMessages(data.messages);
-      setUnreadCount(data.unreadCount);
-      setDraftCount(data.draftCount);
-    } catch (caught) {
-      if (!silent) setError(caught instanceof Error ? caught.message : "Could not load mail");
-    } finally {
-      if (!silent) setLoading(false);
-    }
-  }, [folder, search, activeAccountId]);
+  const loadMessages = useCallback(
+    async (activeFolder = folder, query = search, silent = false) => {
+      if (!silent) {
+        setLoading(true);
+        setError(null);
+      }
+
+      try {
+        const params = new URLSearchParams({
+          folder: activeFolder,
+          accountId: activeAccountId,
+        });
+        if (query.trim()) params.set("q", query.trim());
+
+        const response = await fetch(`/api/messages?${params}`);
+        if (!response.ok) throw new Error("Could not load mail");
+        const data = await response.json() as {
+          messages: MessageListItem[];
+          unreadCount: number;
+          draftCount: number;
+        };
+        setMessages(data.messages);
+        setUnreadCount(data.unreadCount);
+        setDraftCount(data.draftCount);
+      } catch (caught) {
+        if (!silent) {
+          setError(caught instanceof Error ? caught.message : "Could not load mail");
+        }
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [folder, search, activeAccountId],
+  );
 
   useEffect(() => {
-    const timer = setTimeout(() => void loadMessages(folder, search), search ? 250 : 0);
+    const timer = setTimeout(
+      () => void loadMessages(folder, search),
+      search ? 250 : 0,
+    );
     return () => clearTimeout(timer);
   }, [folder, search, activeAccountId, loadMessages]);
 
   useEffect(() => {
     const refresh = () => {
-      if (document.visibilityState === "visible") void loadMessages(folder, search, true);
+      if (document.visibilityState === "visible") {
+        void loadMessages(folder, search, true);
+      }
     };
     const interval = setInterval(refresh, AUTO_REFRESH_MS);
     window.addEventListener("focus", refresh);
@@ -196,8 +214,13 @@ export function App() {
     setError(null);
     try {
       const response = await fetch("/api/accounts/gmail/connect", { method: "POST" });
-      const data = await response.json() as { authorizationUrl?: string; error?: string };
-      if (!response.ok || !data.authorizationUrl) throw new Error(data.error || "Could not start Gmail connection");
+      const data = await response.json() as {
+        authorizationUrl?: string;
+        error?: string;
+      };
+      if (!response.ok || !data.authorizationUrl) {
+        throw new Error(data.error || "Could not start Gmail connection");
+      }
       window.location.assign(data.authorizationUrl);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not connect Gmail");
@@ -233,6 +256,7 @@ export function App() {
         }),
       });
       if (!response.ok) throw new Error();
+
       const known = persistedDraftIds.current.has(current.draftId);
       persistedDraftIds.current.add(current.draftId);
       if (!known) setDraftCount((count) => count + 1);
@@ -258,7 +282,13 @@ export function App() {
   };
 
   const toggleNotifications = async () => {
-    if (!pushPublicKey || ["blocked", "unsupported", "unconfigured", "checking", "working"].includes(notificationState)) return;
+    if (
+      !pushPublicKey
+      || notificationControlsDisabled(notificationState)
+    ) {
+      return;
+    }
+
     setNotificationState("working");
     try {
       const registration = await navigator.serviceWorker.ready;
@@ -273,10 +303,12 @@ export function App() {
         setNotificationState("off");
         return;
       }
+
       if (await Notification.requestPermission() !== "granted") {
         setNotificationState("off");
         return;
       }
+
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: base64UrlToArrayBuffer(pushPublicKey),
@@ -298,12 +330,18 @@ export function App() {
     if (!confirm("Remove this Gmail inbox from LTM Mails?")) return;
     setSettingsBusy("remove");
     try {
-      const response = await fetch(`/api/accounts/${encodeURIComponent(id)}`, { method: "DELETE" });
+      const response = await fetch(
+        `/api/accounts/${encodeURIComponent(id)}`,
+        { method: "DELETE" },
+      );
       if (!response.ok) throw new Error();
-      if (activeAccountId === id) switchAccount("native:primary");
+
+      if (activeAccountId === id) switchAccount(NATIVE_ACCOUNT_ID);
       if (composeAccountId === id) {
-        setComposeAccountId("native:primary");
-        if (compose.draftId) localStorage.setItem(draftSenderKey(compose.draftId), "native:primary");
+        setComposeAccountId(NATIVE_ACCOUNT_ID);
+        if (compose.draftId) {
+          localStorage.setItem(draftSenderKey(compose.draftId), NATIVE_ACCOUNT_ID);
+        }
       }
       await refreshAccounts();
     } catch {
@@ -325,7 +363,10 @@ export function App() {
         challengeId?: string;
         options?: Parameters<typeof startRegistration>[0]["optionsJSON"];
       };
-      if (!optionsResponse.ok || !data.challengeId || !data.options) throw new Error();
+      if (!optionsResponse.ok || !data.challengeId || !data.options) {
+        throw new Error();
+      }
+
       const response = await startRegistration({ optionsJSON: data.options });
       const verifyResponse = await fetch("/api/auth/register/verify", {
         method: "POST",
@@ -341,7 +382,9 @@ export function App() {
   };
 
   const resetSessions = async () => {
-    if (!confirm("Sign out every other browser and device? This device stays signed in.")) return;
+    if (!confirm("Sign out every other browser and device? This device stays signed in.")) {
+      return;
+    }
     setSettingsBusy("sessions");
     try {
       const response = await fetch("/api/auth/sessions/reset", { method: "POST" });
@@ -367,9 +410,13 @@ export function App() {
         const response = await fetch(`/api/drafts/${encodeURIComponent(id)}`);
         const data = await response.json() as { draft: DraftDetail };
         if (!response.ok) throw new Error();
+
         const draft = data.draft;
         const savedSenderId = localStorage.getItem(draftSenderKey(draft.id));
-        const draftSenderId = savedSenderId && accounts.some((account) => account.id === savedSenderId && account.status === "active")
+        const draftSenderId = savedSenderId
+          && accounts.some(
+            (account) => account.id === savedSenderId && account.status === "active",
+          )
           ? savedSenderId
           : activeAccountId;
         setCompose({
@@ -397,7 +444,8 @@ export function App() {
 
     setError(null);
     if (wasUnread) {
-      setMessages((current) => current.map((message) => message.id === id ? { ...message, isRead: true } : message));
+      setMessages((current) => current.map((message) =>
+        message.id === id ? { ...message, isRead: true } : message));
       setUnreadCount((count) => Math.max(0, count - 1));
     }
 
@@ -415,26 +463,41 @@ export function App() {
     try {
       const params = new URLSearchParams({ accountId: activeAccountId });
       if (listItem?.threadId) params.set("threadId", listItem.threadId);
-      const response = await fetch(`/api/messages/${encodeURIComponent(id)}?${params}`);
+      const response = await fetch(
+        `/api/messages/${encodeURIComponent(id)}?${params}`,
+      );
       if (!response.ok) throw new Error();
-      const data = await response.json() as { message: MessageDetail; thread: MessageDetail[]; newlyReadCount: number };
+      const data = await response.json() as {
+        message: MessageDetail;
+        thread: MessageDetail[];
+        newlyReadCount: number;
+      };
       if (requestId !== openRequest.current) return;
 
       const message = listItem?.senderAvatarUrl && !data.message.senderAvatarUrl
         ? { ...data.message, senderAvatarUrl: listItem.senderAvatarUrl }
         : data.message;
-      const nextThread = data.thread.map((item) => item.id === message.id ? message : item);
-      detailCache.current.set(key, { savedAt: Date.now(), message, thread: nextThread });
+      const nextThread = data.thread.map((item) =>
+        item.id === message.id ? message : item);
+      detailCache.current.set(key, {
+        savedAt: Date.now(),
+        message,
+        thread: nextThread,
+      });
       setSelected(message);
       setThread(nextThread);
       setOpeningMessageId(null);
-      setMessages((current) => current.map((item) => item.id === id ? { ...item, isRead: true } : item));
-      if (!wasUnread && data.newlyReadCount) setUnreadCount((count) => Math.max(0, count - data.newlyReadCount));
+      setMessages((current) => current.map((item) =>
+        item.id === id ? { ...item, isRead: true } : item));
+      if (!wasUnread && data.newlyReadCount) {
+        setUnreadCount((count) => Math.max(0, count - data.newlyReadCount));
+      }
     } catch {
       if (requestId !== openRequest.current) return;
       setOpeningMessageId(null);
       if (wasUnread) {
-        setMessages((current) => current.map((message) => message.id === id ? { ...message, isRead: false } : message));
+        setMessages((current) => current.map((message) =>
+          message.id === id ? { ...message, isRead: false } : message));
         setUnreadCount((count) => count + 1);
       }
       setError("Could not open message");
@@ -455,9 +518,16 @@ export function App() {
 
     setError(null);
     setMessages((current) => current
-      .map((message) => message.id === target.id ? { ...message, ...patch } as MessageListItem : message)
-      .filter((message) => message.id !== target.id || belongsInFolder(folder, message)));
-    setThread((current) => current.map((message) => message.id === target.id ? { ...message, ...patch } as MessageDetail : message));
+      .map((message) =>
+        message.id === target.id
+          ? { ...message, ...patch } as MessageListItem
+          : message)
+      .filter((message) =>
+        message.id !== target.id || belongsInFolder(folder, message)));
+    setThread((current) => current.map((message) =>
+      message.id === target.id
+        ? { ...message, ...patch } as MessageDetail
+        : message));
 
     if (close || !keepInCurrentFolder) {
       setSelected(null);
@@ -469,16 +539,24 @@ export function App() {
     const cached = detailCache.current.get(key);
     if (cached) {
       const cachedMessage = { ...cached.message, ...patch } as MessageDetail;
-      const cachedThread = cached.thread.map((message) => message.id === target.id ? cachedMessage : message);
-      detailCache.current.set(key, { savedAt: Date.now(), message: cachedMessage, thread: cachedThread });
+      const cachedThread = cached.thread.map((message) =>
+        message.id === target.id ? cachedMessage : message);
+      detailCache.current.set(key, {
+        savedAt: Date.now(),
+        message: cachedMessage,
+        thread: cachedThread,
+      });
     }
 
     try {
-      const response = await fetch(`/api/messages/${encodeURIComponent(target.id)}?accountId=${encodeURIComponent(activeAccountId)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
-      });
+      const response = await fetch(
+        `/api/messages/${encodeURIComponent(target.id)}?accountId=${encodeURIComponent(activeAccountId)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(patch),
+        },
+      );
       if (!response.ok) throw new Error();
     } catch {
       setMessages(previousMessages);
@@ -493,7 +571,7 @@ export function App() {
 
   const startCompose = () => {
     const draftId = crypto.randomUUID();
-    setCompose({ ...emptyCompose, draftId });
+    setCompose({ ...EMPTY_COMPOSE, draftId });
     setComposeAccountId(activeAccountId);
     localStorage.setItem(draftSenderKey(draftId), activeAccountId);
     setFiles([]);
@@ -506,8 +584,10 @@ export function App() {
     const target = thread.at(-1) ?? selected;
     const draftId = crypto.randomUUID();
     setCompose({
-      ...emptyCompose,
-      to: target.direction === "inbound" ? target.fromAddress : target.toAddresses[0] ?? "",
+      ...EMPTY_COMPOSE,
+      to: target.direction === "inbound"
+        ? target.fromAddress
+        : target.toAddresses[0] ?? "",
       subject: replySubject(target.subject),
       replyToMessageId: target.id,
       draftId,
@@ -521,7 +601,7 @@ export function App() {
     if (!selected) return;
     const draftId = crypto.randomUUID();
     setCompose({
-      ...emptyCompose,
+      ...EMPTY_COMPOSE,
       subject: forwardSubject(selected.subject),
       text: forwardedBody(selected),
       forwardMessageId: selected.id,
@@ -534,7 +614,9 @@ export function App() {
 
   const changeComposeAccount = (accountId: string) => {
     setComposeAccountId(accountId);
-    if (compose.draftId) localStorage.setItem(draftSenderKey(compose.draftId), accountId);
+    if (compose.draftId) {
+      localStorage.setItem(draftSenderKey(compose.draftId), accountId);
+    }
   };
 
   const closeCompose = () => {
@@ -545,10 +627,12 @@ export function App() {
   const discardCompose = async () => {
     if (compose.draftId) {
       localStorage.removeItem(draftSenderKey(compose.draftId));
-      await fetch(`/api/drafts/${encodeURIComponent(compose.draftId)}`, { method: "DELETE" }).catch(() => undefined);
+      await fetch(`/api/drafts/${encodeURIComponent(compose.draftId)}`, {
+        method: "DELETE",
+      }).catch(() => undefined);
     }
     setComposeOpen(false);
-    setCompose(emptyCompose);
+    setCompose(EMPTY_COMPOSE);
     setComposeAccountId(activeAccountId);
     setFiles([]);
   };
@@ -559,18 +643,35 @@ export function App() {
     try {
       const form = new FormData();
       form.set("accountId", composeAccountId);
-      for (const key of ["to", "cc", "bcc", "subject", "text", "replyToMessageId", "forwardMessageId", "draftId"] as const) {
+      for (const key of [
+        "to",
+        "cc",
+        "bcc",
+        "subject",
+        "text",
+        "replyToMessageId",
+        "forwardMessageId",
+        "draftId",
+      ] as const) {
         if (compose[key]) form.set(key, compose[key]);
       }
       files.forEach((file) => form.append("attachments", file));
+
       const response = await fetch("/api/send", { method: "POST", body: form });
       const data = await response.json().catch(() => ({})) as { error?: string };
-      if (!response.ok) throw new Error(data.error || "Email could not be sent");
-      if (compose.draftId) localStorage.removeItem(draftSenderKey(compose.draftId));
+      if (!response.ok) {
+        throw new Error(data.error || "Email could not be sent");
+      }
+
+      if (compose.draftId) {
+        localStorage.removeItem(draftSenderKey(compose.draftId));
+      }
       setComposeOpen(false);
-      setCompose(emptyCompose);
+      setCompose(EMPTY_COMPOSE);
       setFiles([]);
-      if (composeAccountId !== activeAccountId) setActiveAccountId(composeAccountId);
+      if (composeAccountId !== activeAccountId) {
+        setActiveAccountId(composeAccountId);
+      }
       setFolder("sent");
       setSelected(null);
       setThread([]);
@@ -589,14 +690,17 @@ export function App() {
     setOpeningMessageId(null);
   };
 
-  const label = useMemo(() => folders.find((item) => item.key === folder)?.label ?? "Mail", [folder]);
-  const notificationsDisabled = ["checking", "working", "blocked", "unsupported", "unconfigured"].includes(notificationState);
+  const label = useMemo(
+    () => FOLDERS.find((item) => item.key === folder)?.label ?? "Mail",
+    [folder],
+  );
+  const notificationsDisabled = notificationControlsDisabled(notificationState);
   const readerOpen = Boolean(selected || openingMessageId);
 
   return (
     <main className={`app-shell ${readerOpen ? "message-open" : ""}`}>
       <Sidebar
-        folders={folders}
+        folders={FOLDERS}
         activeFolder={folder}
         unreadCount={unreadCount}
         draftCount={draftCount}
@@ -639,7 +743,7 @@ export function App() {
         />
       </div>
       <MobileNav
-        folders={folders}
+        folders={FOLDERS}
         activeFolder={folder}
         unreadCount={unreadCount}
         draftCount={draftCount}
