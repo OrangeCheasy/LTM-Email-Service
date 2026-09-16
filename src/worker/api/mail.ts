@@ -1,10 +1,288 @@
 import { resolveProvider } from "../providers/registry";
 import { gmailAttachment, gmailFullMessage, gmailThread } from "../providers/gmailProvider";
 import type { MailFolder, ProviderMutation } from "../providers/types";
-type Folder="inbox"|"starred"|"sent"|"drafts"|"archive"|"trash";type MessageRow={id:string;thread_id:string;direction:"inbound"|"outbound";from_address:string;from_name:string|null;to_addresses:string;cc_addresses:string;bcc_addresses:string;subject:string;preview:string;body_text:string|null;body_html:string|null;received_at:string;sent_at:string|null;is_read:number;is_starred:number;is_archived:number;is_deleted:number;has_attachments:number;in_reply_to:string|null;reference_ids:string|null;delivery_status:string|null;delivery_error:string|null};type DraftListRow={id:string;thread_id:string|null;to_addresses:string;subject:string;body_text:string;updated_at:string};type AttachmentRow={id:string;message_id:string;filename:string;content_type:string;size:number;r2_key:string};
-const folders=new Set<Folder>(["inbox","starred","sent","drafts","archive","trash"]),INLINE_DOWNLOAD_TYPES=new Set(["image/jpeg","image/png","image/gif","image/webp"]);const folderFrom=(v:string|null):Folder=>v&&folders.has(v as Folder)?v as Folder:"inbox";function parseArray(v:string):string[]{try{const p:unknown=JSON.parse(v);return Array.isArray(p)?p.filter((x):x is string=>typeof x==="string"):[]}catch{return[]}}const preview=(v:string)=>v.replace(/\s+/g," ").trim().slice(0,240);function toListItem(r:MessageRow){return{id:r.id,threadId:r.thread_id,direction:r.direction,fromAddress:r.from_address,fromName:r.from_name,toAddresses:parseArray(r.to_addresses),subject:r.subject,preview:r.preview,receivedAt:r.received_at,sentAt:r.sent_at,isRead:Boolean(r.is_read),isStarred:Boolean(r.is_starred),isArchived:Boolean(r.is_archived),isDeleted:Boolean(r.is_deleted),hasAttachments:Boolean(r.has_attachments),deliveryStatus:r.delivery_status,isDraft:false}}function toDraftListItem(r:DraftListRow,primary:string){return{id:r.id,threadId:r.thread_id??r.id,direction:"outbound" as const,fromAddress:primary,fromName:"You",toAddresses:parseArray(r.to_addresses),subject:r.subject,preview:preview(r.body_text),receivedAt:r.updated_at,sentAt:null,isRead:true,isStarred:false,isArchived:false,isDeleted:false,hasAttachments:false,deliveryStatus:"draft",isDraft:true}}async function mailboxCounts(env:Env){const[u,d]=await Promise.all([env.DB.prepare("SELECT COUNT(*) AS count FROM messages WHERE direction='inbound' AND is_archived=0 AND is_deleted=0 AND is_read=0").first<{count:number}>(),env.DB.prepare("SELECT COUNT(*) AS count FROM drafts").first<{count:number}>()]);return{unreadCount:u?.count??0,draftCount:d?.count??0}}async function requestedProvider(request:Request,env:Env){return resolveProvider(env,new URL(request.url).searchParams.get("accountId"))}
-export async function listMessages(request:Request,env:Env):Promise<Response>{const url=new URL(request.url),folder=folderFrom(url.searchParams.get("folder")),search=(url.searchParams.get("q")??"").trim().toLowerCase().slice(0,200),n=Number(url.searchParams.get("limit")??50),limit=Number.isFinite(n)?Math.max(1,Math.min(100,Math.floor(n))):50,counts=await mailboxCounts(env);if(folder==="drafts"){let where="1 = 1";const b:Array<string|number>=[];if(search){where+=" AND (LOWER(subject) LIKE ? OR LOWER(body_text) LIKE ? OR LOWER(to_addresses) LIKE ?)";const t=`%${search}%`;b.push(t,t,t)}b.push(limit);const r=await env.DB.prepare(`SELECT id,thread_id,to_addresses,subject,body_text,updated_at FROM drafts WHERE ${where} ORDER BY updated_at DESC LIMIT ?`).bind(...b).all<DraftListRow>();return Response.json({folder,...counts,messages:r.results.map(x=>toDraftListItem(x,env.PRIMARY_ADDRESS))})}const provider=await resolveProvider(env,url.searchParams.get("accountId"));if(!provider)return Response.json({error:"Account not found or unavailable"},{status:404});const messages=await provider.listMessages({folder:folder as MailFolder,search,limit});return Response.json({folder,...counts,accountId:provider.accountId,messages})}
-function detailFrom(r:MessageRow,a:AttachmentRow[]){return{...toListItem(r),ccAddresses:parseArray(r.cc_addresses),bccAddresses:parseArray(r.bcc_addresses),bodyText:r.body_text??r.preview,bodyHtmlAvailable:Boolean(r.body_html),inReplyTo:r.in_reply_to,references:r.reference_ids,deliveryError:r.delivery_error,attachments:a.map(x=>({id:x.id,filename:x.filename,contentType:x.content_type,size:x.size}))}}
-export async function getMessage(request:Request,id:string,env:Env):Promise<Response>{const provider=await requestedProvider(request,env);if(!provider)return Response.json({error:"Account not found or unavailable"},{status:404});if(provider.kind==="gmail"){try{const message=await gmailFullMessage(env,provider.accountId,id),thread=await gmailThread(env,provider.accountId,message.threadId);if(!message.isRead)await provider.patchMessage(id,{isRead:true});return Response.json({message:{...message,isRead:true},thread,newlyReadCount:message.isRead?0:1,accountId:provider.accountId})}catch{return Response.json({error:"Message not found or Gmail is unavailable"},{status:404})}}if(!(await provider.getMessage(id)))return Response.json({error:"Message not found"},{status:404});const row=await env.DB.prepare(`SELECT id,thread_id,direction,from_address,from_name,to_addresses,cc_addresses,bcc_addresses,subject,preview,body_text,body_html,received_at,sent_at,is_read,is_starred,is_archived,is_deleted,has_attachments,in_reply_to,reference_ids,delivery_status,delivery_error FROM messages WHERE id=?1`).bind(id).first<MessageRow>();if(!row)return Response.json({error:"Message not found"},{status:404});const unread=await env.DB.prepare("SELECT COUNT(*) AS count FROM messages WHERE thread_id=?1 AND direction='inbound' AND is_read=0").bind(row.thread_id).first<{count:number}>(),newlyReadCount=unread?.count??0;if(newlyReadCount>0)await env.DB.batch([env.DB.prepare("UPDATE messages SET is_read=1 WHERE thread_id=?1 AND direction='inbound' AND is_read=0").bind(row.thread_id),env.DB.prepare("UPDATE threads SET is_read=1 WHERE id=?1").bind(row.thread_id)]);const tr=await env.DB.prepare(`SELECT id,thread_id,direction,from_address,from_name,to_addresses,cc_addresses,bcc_addresses,subject,preview,body_text,body_html,received_at,sent_at,is_read,is_starred,is_archived,is_deleted,has_attachments,in_reply_to,reference_ids,delivery_status,delivery_error FROM messages WHERE thread_id=?1 ORDER BY COALESCE(sent_at,received_at) ASC LIMIT 100`).bind(row.thread_id).all<MessageRow>();const ids=tr.results.map(x=>x.id),map=new Map<string,AttachmentRow[]>();if(ids.length){const ph=ids.map(()=>"?").join(","),a=await env.DB.prepare(`SELECT id,message_id,filename,content_type,size,r2_key FROM attachments WHERE message_id IN (${ph}) ORDER BY created_at ASC`).bind(...ids).all<AttachmentRow>();for(const x of a.results)map.set(x.message_id,[...(map.get(x.message_id)??[]),x])}const thread=tr.results.map(x=>detailFrom(x,map.get(x.id)??[])),message=thread.find(x=>x.id===id);return message?Response.json({message,thread,newlyReadCount,accountId:provider.accountId}):Response.json({error:"Message not found"},{status:404})}
-export async function patchMessage(request:Request,id:string,env:Env):Promise<Response>{const provider=await requestedProvider(request,env);if(!provider)return Response.json({error:"Account not found or unavailable"},{status:404});let body:Record<string,unknown>;try{body=await request.json<Record<string,unknown>>()}catch{return Response.json({error:"Invalid JSON body"},{status:400})}const mutation:ProviderMutation={};for(const key of ["isRead","isStarred","isArchived","isDeleted"] as const)if(typeof body[key]==="boolean")mutation[key]=body[key];if(!Object.keys(mutation).length)return Response.json({error:"No supported fields supplied"},{status:400});const changed=await provider.patchMessage(id,mutation);return changed?Response.json({ok:true,accountId:provider.accountId}):Response.json({error:"Message not found"},{status:404})}
-export async function downloadAttachment(request:Request,id:string,env:Env):Promise<Response>{const provider=await requestedProvider(request,env);if(!provider)return Response.json({error:"Account not found or unavailable"},{status:404});if(provider.kind==="gmail"){const messageId=new URL(request.url).searchParams.get("messageId")?.trim();if(!messageId)return Response.json({error:"Message id is required"},{status:400});try{const a=await gmailAttachment(env,provider.accountId,messageId,id),inline=INLINE_DOWNLOAD_TYPES.has(a.contentType);return new Response(a.data,{headers:{"Content-Type":inline?a.contentType:"application/octet-stream","Content-Length":String(a.data.byteLength),"Content-Disposition":`${inline?"inline":"attachment"}; filename*=UTF-8''${encodeURIComponent(a.filename)}`,"Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff","Content-Security-Policy":"default-src 'none'; sandbox"}})}catch{return Response.json({error:"Attachment not found or unavailable"},{status:404})}}const a=await env.DB.prepare("SELECT id,message_id,filename,content_type,size,r2_key FROM attachments WHERE id=?1").bind(id).first<AttachmentRow>();if(!a||!(await provider.getMessage(a.message_id)))return Response.json({error:"Attachment not found"},{status:404});const o=await env.MAIL.get(a.r2_key);if(!o)return Response.json({error:"Attachment data is unavailable"},{status:404});const inline=INLINE_DOWNLOAD_TYPES.has(a.content_type);return new Response(o.body,{headers:{"Content-Type":inline?a.content_type:"application/octet-stream","Content-Length":String(a.size),"Content-Disposition":`${inline?"inline":"attachment"}; filename*=UTF-8''${encodeURIComponent(a.filename)}`,"Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff","Content-Security-Policy":"default-src 'none'; sandbox"}})}
+
+type Folder = "inbox" | "starred" | "sent" | "drafts" | "archive" | "trash";
+type MessageRow = {
+  id: string;
+  thread_id: string;
+  direction: "inbound" | "outbound";
+  from_address: string;
+  from_name: string | null;
+  to_addresses: string;
+  cc_addresses: string;
+  bcc_addresses: string;
+  subject: string;
+  preview: string;
+  body_text: string | null;
+  body_html: string | null;
+  received_at: string;
+  sent_at: string | null;
+  is_read: number;
+  is_starred: number;
+  is_archived: number;
+  is_deleted: number;
+  has_attachments: number;
+  in_reply_to: string | null;
+  reference_ids: string | null;
+  delivery_status: string | null;
+  delivery_error: string | null;
+};
+type DraftListRow = { id: string; thread_id: string | null; to_addresses: string; subject: string; body_text: string; updated_at: string };
+type AttachmentRow = { id: string; message_id: string; filename: string; content_type: string; size: number; r2_key: string };
+
+const folders = new Set<Folder>(["inbox", "starred", "sent", "drafts", "archive", "trash"]);
+const INLINE_DOWNLOAD_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+const folderFrom = (value: string | null): Folder => value && folders.has(value as Folder) ? value as Folder : "inbox";
+
+function parseArray(value: string): string[] {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+const preview = (value: string) => value.replace(/\s+/g, " ").trim().slice(0, 240);
+
+function toListItem(row: MessageRow) {
+  return {
+    id: row.id,
+    threadId: row.thread_id,
+    direction: row.direction,
+    fromAddress: row.from_address,
+    fromName: row.from_name,
+    toAddresses: parseArray(row.to_addresses),
+    subject: row.subject,
+    preview: row.preview,
+    receivedAt: row.received_at,
+    sentAt: row.sent_at,
+    isRead: Boolean(row.is_read),
+    isStarred: Boolean(row.is_starred),
+    isArchived: Boolean(row.is_archived),
+    isDeleted: Boolean(row.is_deleted),
+    hasAttachments: Boolean(row.has_attachments),
+    deliveryStatus: row.delivery_status,
+    isDraft: false,
+  };
+}
+
+function toDraftListItem(row: DraftListRow, primary: string) {
+  return {
+    id: row.id,
+    threadId: row.thread_id ?? row.id,
+    direction: "outbound" as const,
+    fromAddress: primary,
+    fromName: "You",
+    toAddresses: parseArray(row.to_addresses),
+    subject: row.subject,
+    preview: preview(row.body_text),
+    receivedAt: row.updated_at,
+    sentAt: null,
+    isRead: true,
+    isStarred: false,
+    isArchived: false,
+    isDeleted: false,
+    hasAttachments: false,
+    deliveryStatus: "draft",
+    isDraft: true,
+  };
+}
+
+async function mailboxCounts(env: Env) {
+  const [unread, drafts] = await Promise.all([
+    env.DB.prepare("SELECT COUNT(*) AS count FROM messages WHERE direction='inbound' AND is_archived=0 AND is_deleted=0 AND is_read=0").first<{ count: number }>(),
+    env.DB.prepare("SELECT COUNT(*) AS count FROM drafts").first<{ count: number }>(),
+  ]);
+  return { unreadCount: unread?.count ?? 0, draftCount: drafts?.count ?? 0 };
+}
+
+async function requestedProvider(request: Request, env: Env) {
+  return resolveProvider(env, new URL(request.url).searchParams.get("accountId"));
+}
+
+export async function listMessages(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const folder = folderFrom(url.searchParams.get("folder"));
+  const search = (url.searchParams.get("q") ?? "").trim().toLowerCase().slice(0, 200);
+  const requestedLimit = Number(url.searchParams.get("limit") ?? 50);
+  const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(100, Math.floor(requestedLimit))) : 50;
+
+  if (folder === "drafts") {
+    let where = "1 = 1";
+    const bindings: Array<string | number> = [];
+    if (search) {
+      where += " AND (LOWER(subject) LIKE ? OR LOWER(body_text) LIKE ? OR LOWER(to_addresses) LIKE ?)";
+      const term = `%${search}%`;
+      bindings.push(term, term, term);
+    }
+    bindings.push(limit);
+    const [counts, result] = await Promise.all([
+      mailboxCounts(env),
+      env.DB.prepare(`SELECT id,thread_id,to_addresses,subject,body_text,updated_at FROM drafts WHERE ${where} ORDER BY updated_at DESC LIMIT ?`)
+        .bind(...bindings)
+        .all<DraftListRow>(),
+    ]);
+    return Response.json({ folder, ...counts, messages: result.results.map((row) => toDraftListItem(row, env.PRIMARY_ADDRESS)) });
+  }
+
+  const provider = await resolveProvider(env, url.searchParams.get("accountId"));
+  if (!provider) return Response.json({ error: "Account not found or unavailable" }, { status: 404 });
+  const [counts, messages] = await Promise.all([
+    mailboxCounts(env),
+    provider.listMessages({ folder: folder as MailFolder, search, limit }),
+  ]);
+  return Response.json({ folder, ...counts, accountId: provider.accountId, messages });
+}
+
+function detailFrom(row: MessageRow, attachments: AttachmentRow[]) {
+  return {
+    ...toListItem(row),
+    ccAddresses: parseArray(row.cc_addresses),
+    bccAddresses: parseArray(row.bcc_addresses),
+    bodyText: row.body_text ?? row.preview,
+    bodyHtmlAvailable: Boolean(row.body_html),
+    inReplyTo: row.in_reply_to,
+    references: row.reference_ids,
+    deliveryError: row.delivery_error,
+    attachments: attachments.map((attachment) => ({
+      id: attachment.id,
+      filename: attachment.filename,
+      contentType: attachment.content_type,
+      size: attachment.size,
+    })),
+  };
+}
+
+export async function getMessage(request: Request, id: string, env: Env): Promise<Response> {
+  const provider = await requestedProvider(request, env);
+  if (!provider) return Response.json({ error: "Account not found or unavailable" }, { status: 404 });
+
+  if (provider.kind === "gmail") {
+    try {
+      const url = new URL(request.url);
+      const hintedThreadId = url.searchParams.get("threadId")?.trim();
+      let thread;
+      if (hintedThreadId) {
+        thread = await gmailThread(env, provider.accountId, hintedThreadId, false);
+      } else {
+        const initial = await gmailFullMessage(env, provider.accountId, id, false);
+        thread = await gmailThread(env, provider.accountId, initial.threadId, false);
+      }
+      const current = thread.find((message) => message.id === id);
+      if (!current) return Response.json({ error: "Message not found" }, { status: 404 });
+      const newlyReadCount = current.isRead ? 0 : 1;
+      if (newlyReadCount) await provider.patchMessage(id, { isRead: true });
+      const message = newlyReadCount ? { ...current, isRead: true } : current;
+      const updatedThread = newlyReadCount
+        ? thread.map((entry) => entry.id === id ? message : entry)
+        : thread;
+      return Response.json({ message, thread: updatedThread, newlyReadCount, accountId: provider.accountId });
+    } catch {
+      return Response.json({ error: "Message not found or Gmail is unavailable" }, { status: 404 });
+    }
+  }
+
+  const row = await env.DB.prepare(`SELECT id,thread_id,direction,from_address,from_name,to_addresses,cc_addresses,bcc_addresses,subject,preview,body_text,body_html,received_at,sent_at,is_read,is_starred,is_archived,is_deleted,has_attachments,in_reply_to,reference_ids,delivery_status,delivery_error FROM messages WHERE id=?1`)
+    .bind(id)
+    .first<MessageRow>();
+  if (!row) return Response.json({ error: "Message not found" }, { status: 404 });
+
+  const unread = await env.DB.prepare("SELECT COUNT(*) AS count FROM messages WHERE thread_id=?1 AND direction='inbound' AND is_read=0")
+    .bind(row.thread_id)
+    .first<{ count: number }>();
+  const newlyReadCount = unread?.count ?? 0;
+  if (newlyReadCount > 0) {
+    await env.DB.batch([
+      env.DB.prepare("UPDATE messages SET is_read=1 WHERE thread_id=?1 AND direction='inbound' AND is_read=0").bind(row.thread_id),
+      env.DB.prepare("UPDATE threads SET is_read=1 WHERE id=?1").bind(row.thread_id),
+    ]);
+  }
+
+  const threadRows = await env.DB.prepare(`SELECT id,thread_id,direction,from_address,from_name,to_addresses,cc_addresses,bcc_addresses,subject,preview,body_text,body_html,received_at,sent_at,is_read,is_starred,is_archived,is_deleted,has_attachments,in_reply_to,reference_ids,delivery_status,delivery_error FROM messages WHERE thread_id=?1 ORDER BY COALESCE(sent_at,received_at) ASC LIMIT 100`)
+    .bind(row.thread_id)
+    .all<MessageRow>();
+  const ids = threadRows.results.map((entry) => entry.id);
+  const attachmentMap = new Map<string, AttachmentRow[]>();
+  if (ids.length) {
+    const placeholders = ids.map(() => "?").join(",");
+    const attachments = await env.DB.prepare(`SELECT id,message_id,filename,content_type,size,r2_key FROM attachments WHERE message_id IN (${placeholders}) ORDER BY created_at ASC`)
+      .bind(...ids)
+      .all<AttachmentRow>();
+    for (const attachment of attachments.results) {
+      attachmentMap.set(attachment.message_id, [...(attachmentMap.get(attachment.message_id) ?? []), attachment]);
+    }
+  }
+  const thread = threadRows.results.map((entry) => detailFrom(entry, attachmentMap.get(entry.id) ?? []));
+  const message = thread.find((entry) => entry.id === id);
+  return message
+    ? Response.json({ message, thread, newlyReadCount, accountId: provider.accountId })
+    : Response.json({ error: "Message not found" }, { status: 404 });
+}
+
+export async function patchMessage(request: Request, id: string, env: Env): Promise<Response> {
+  const provider = await requestedProvider(request, env);
+  if (!provider) return Response.json({ error: "Account not found or unavailable" }, { status: 404 });
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json<Record<string, unknown>>();
+  } catch {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const mutation: ProviderMutation = {};
+  for (const key of ["isRead", "isStarred", "isArchived", "isDeleted"] as const) {
+    if (typeof body[key] === "boolean") mutation[key] = body[key];
+  }
+  if (!Object.keys(mutation).length) return Response.json({ error: "No supported fields supplied" }, { status: 400 });
+  const changed = await provider.patchMessage(id, mutation);
+  return changed
+    ? Response.json({ ok: true, accountId: provider.accountId })
+    : Response.json({ error: "Message not found" }, { status: 404 });
+}
+
+export async function downloadAttachment(request: Request, id: string, env: Env): Promise<Response> {
+  const provider = await requestedProvider(request, env);
+  if (!provider) return Response.json({ error: "Account not found or unavailable" }, { status: 404 });
+
+  if (provider.kind === "gmail") {
+    const messageId = new URL(request.url).searchParams.get("messageId")?.trim();
+    if (!messageId) return Response.json({ error: "Message id is required" }, { status: 400 });
+    try {
+      const attachment = await gmailAttachment(env, provider.accountId, messageId, id);
+      const inline = INLINE_DOWNLOAD_TYPES.has(attachment.contentType);
+      return new Response(attachment.data, {
+        headers: {
+          "Content-Type": inline ? attachment.contentType : "application/octet-stream",
+          "Content-Length": String(attachment.data.byteLength),
+          "Content-Disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(attachment.filename)}`,
+          "Cache-Control": "private, no-store",
+          "X-Content-Type-Options": "nosniff",
+          "Content-Security-Policy": "default-src 'none'; sandbox",
+        },
+      });
+    } catch {
+      return Response.json({ error: "Attachment not found or unavailable" }, { status: 404 });
+    }
+  }
+
+  const attachment = await env.DB.prepare("SELECT id,message_id,filename,content_type,size,r2_key FROM attachments WHERE id=?1")
+    .bind(id)
+    .first<AttachmentRow>();
+  if (!attachment || !(await provider.getMessage(attachment.message_id))) {
+    return Response.json({ error: "Attachment not found" }, { status: 404 });
+  }
+  const object = await env.MAIL.get(attachment.r2_key);
+  if (!object) return Response.json({ error: "Attachment data is unavailable" }, { status: 404 });
+  const inline = INLINE_DOWNLOAD_TYPES.has(attachment.content_type);
+  return new Response(object.body, {
+    headers: {
+      "Content-Type": inline ? attachment.content_type : "application/octet-stream",
+      "Content-Length": String(attachment.size),
+      "Content-Disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(attachment.filename)}`,
+      "Cache-Control": "private, no-store",
+      "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy": "default-src 'none'; sandbox",
+    },
+  });
+}
