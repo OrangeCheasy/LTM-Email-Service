@@ -97,12 +97,12 @@ export function MessageReader({ message, thread, loading = false, onBack, onRepl
           {!message.isDeleted ? (
             <button className="mobile-reader-action" type="button" onClick={() => onPatch({ isArchived: !message.isArchived }, true)} aria-label={message.isArchived ? "Unarchive message" : "Archive message"}><Icon name="archive" size={17}/><span>{message.isArchived ? "Unarchive" : "Archive"}</span></button>
           ) : null}
+          <button className="mobile-reader-action" type="button" onClick={onReply} aria-label="Reply to message"><Icon name="reply" size={17}/><span>Reply</span></button>
           {!message.isDeleted ? (
             <button className="mobile-reader-action destructive" type="button" onClick={() => onPatch({ isDeleted: true }, true)} aria-label="Delete message"><Icon name="trash" size={17}/><span>Delete</span></button>
           ) : (
             <button className="mobile-reader-action" type="button" onClick={() => onPatch({ isDeleted: false }, true)} aria-label="Restore message"><Icon name="inbox" size={17}/><span>Restore</span></button>
           )}
-          <button className="mobile-reader-action" type="button" onClick={onReply} aria-label="Reply to message"><Icon name="reply" size={17}/><span>Reply</span></button>
         </div>
       </header>
 
