@@ -1,5 +1,40 @@
 import { googleContactPhotoSources } from "../providers/googleContacts";
 import { getGoogleAccessToken } from "../providers/googleCredentials";
-const ALLOWED=new Set(["image/jpeg","image/png","image/webp"]),MAX=2*1024*1024;
-const googleImage=(url:URL)=>url.protocol==="https:"&&(url.hostname==="lh3.googleusercontent.com"||url.hostname.endsWith(".googleusercontent.com"));
-export async function getContactAvatar(request:Request,env:Env){const u=new URL(request.url),accountId=u.searchParams.get("accountId")??"",email=(u.searchParams.get("email")??"").trim().toLowerCase();if(!accountId.startsWith("gmail:")||!email||email.length>320)return new Response(null,{status:404});try{const map=await googleContactPhotoSources(env,accountId,[email]),raw=map.get(email);if(!raw)return new Response(null,{status:404});const photo=new URL(raw);if(!googleImage(photo))return new Response(null,{status:404});const token=await getGoogleAccessToken(env,accountId);const r=await fetch(photo.toString(),{headers:{Authorization:`Bearer ${token}`},redirect:"follow"});if(!r.ok||!googleImage(new URL(r.url)))return new Response(null,{status:404});const type=(r.headers.get("Content-Type")??"").split(";")[0].trim().toLowerCase(),declared=Number(r.headers.get("Content-Length")??0);if(!ALLOWED.has(type)||(declared&&declared>MAX))return new Response(null,{status:404});const bytes=await r.arrayBuffer();if(bytes.byteLength>MAX)return new Response(null,{status:404});return new Response(bytes,{headers:{"Content-Type":type,"Content-Length":String(bytes.byteLength),"Cache-Control":"private, max-age=3600","X-Content-Type-Options":"nosniff"}})}catch{return new Response(null,{status:404})}}
+import {
+  googleImageResponse,
+  isAllowedGoogleImageUrl,
+  readValidatedGoogleImage,
+} from "../providers/googleImages";
+
+const notFound = () => new Response(null, { status: 404 });
+
+export async function getContactAvatar(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const accountId = url.searchParams.get("accountId") ?? "";
+  const email = (url.searchParams.get("email") ?? "").trim().toLowerCase();
+  if (!accountId.startsWith("gmail:") || !email || email.length > 320) return notFound();
+
+  try {
+    const sources = await googleContactPhotoSources(env, accountId, [email]);
+    const rawPhotoUrl = sources.get(email);
+    if (!rawPhotoUrl) return notFound();
+
+    const photoUrl = new URL(rawPhotoUrl);
+    if (!isAllowedGoogleImageUrl(photoUrl)) return notFound();
+
+    const token = await getGoogleAccessToken(env, accountId);
+    const response = await fetch(photoUrl.toString(), {
+      headers: { Authorization: `Bearer ${token}` },
+      redirect: "follow",
+    });
+    if (!response.ok || !response.url) return notFound();
+
+    const finalUrl = new URL(response.url);
+    if (!isAllowedGoogleImageUrl(finalUrl)) return notFound();
+
+    const image = await readValidatedGoogleImage(response);
+    return image ? googleImageResponse(image) : notFound();
+  } catch {
+    return notFound();
+  }
+}
