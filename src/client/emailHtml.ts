@@ -52,10 +52,13 @@ export function buildSafeEmailDocument(html: string): string {
     element.removeAttribute("poster");
   });
 
+  document.documentElement.removeAttribute("bgcolor");
+  document.body?.removeAttribute("bgcolor");
+
   const securityHead = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: cid:; style-src 'unsafe-inline'; font-src data:; script-src 'none'; connect-src 'none'; object-src 'none'; frame-src 'none'; child-src 'none'; media-src 'none'; form-action 'none'; base-uri 'none'">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-  html, body { margin: 0; padding: 0; min-width: 0; background: transparent; }
+<meta name="viewport" content="width=device-width, initial-scale=1">`;
+  const finalSafetyStyles = `<style>
+  html, body { margin: 0 !important; padding: 0 !important; min-width: 0; max-width: 100%; background: transparent !important; }
   body { overflow-wrap: anywhere; word-break: normal; }
   img, table { max-width: 100% !important; }
   img { height: auto !important; }
@@ -63,6 +66,6 @@ export function buildSafeEmailDocument(html: string): string {
   a { cursor: pointer; }
 </style>`;
 
-  document.head.innerHTML = securityHead + document.head.innerHTML;
+  document.head.innerHTML = securityHead + document.head.innerHTML + finalSafetyStyles;
   return `<!doctype html>${document.documentElement.outerHTML}`;
 }

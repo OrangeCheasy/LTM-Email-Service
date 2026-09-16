@@ -1,14 +1,29 @@
+.rich-email-shell {
+  width: min(100%, 760px);
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 4px 18px rgba(20, 20, 24, .06);
+}
+
 .rich-email-frame {
   display: block;
   width: 100%;
-  min-height: 160px;
+  min-height: 120px;
   border: 0;
   background: transparent;
   overflow: hidden;
 }
 
 @media (max-width: 720px) {
+  .rich-email-shell {
+    width: 100%;
+    border-radius: 10px;
+  }
+
   .rich-email-frame {
-    min-height: 140px;
+    min-height: 100px;
   }
 }
