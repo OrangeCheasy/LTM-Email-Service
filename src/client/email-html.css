@@ -1,0 +1,14 @@
+.rich-email-frame {
+  display: block;
+  width: 100%;
+  min-height: 160px;
+  border: 0;
+  background: transparent;
+  overflow: hidden;
+}
+
+@media (max-width: 720px) {
+  .rich-email-frame {
+    min-height: 140px;
+  }
+}
