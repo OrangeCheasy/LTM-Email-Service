@@ -32,6 +32,7 @@ const emptyCompose: ComposeState = {
 
 const AUTO_REFRESH_MS = 15_000;
 const DETAIL_CACHE_MS = 5 * 60_000;
+const DRAFT_SENDER_KEY_PREFIX = "ltm-draft-sender:";
 
 type DetailCacheEntry = { savedAt: number; message: MessageDetail; thread: MessageDetail[] };
 
@@ -50,11 +51,11 @@ const hasDraftContent = (compose: ComposeState) => Boolean(
   compose.to.trim() || compose.cc.trim() || compose.bcc.trim() || compose.subject.trim() || compose.text.trim() || compose.replyToMessageId || compose.forwardMessageId,
 );
 
+const draftSenderKey = (draftId: string) => `${DRAFT_SENDER_KEY_PREFIX}${draftId}`;
+
 function forwardedBody(message: MessageDetail) {
-  const from = message.direction === "outbound"
-    ? "contact@liamthemo.com"
-    : message.fromName ? `${message.fromName} <${message.fromAddress}>` : message.fromAddress;
-  const to = message.toAddresses.join(", ") || "contact@liamthemo.com";
+  const from = message.fromName ? `${message.fromName} <${message.fromAddress}>` : message.fromAddress;
+  const to = message.toAddresses.join(", ") || "undisclosed recipients";
   return `\n\n---------- Forwarded message ----------\nFrom: ${from}\nDate: ${formatFullDate(message.sentAt || message.receivedAt)}\nSubject: ${message.subject || "(no subject)"}\nTo: ${to}\n\n${message.bodyText || ""}`;
 }
 
@@ -82,6 +83,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [composeOpen, setComposeOpen] = useState(false);
   const [compose, setCompose] = useState<ComposeState>(emptyCompose);
+  const [composeAccountId, setComposeAccountId] = useState("native:primary");
   const [files, setFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
   const [draftStatus, setDraftStatus] = useState<"saving" | "saved" | null>(null);
@@ -299,6 +301,10 @@ export function App() {
       const response = await fetch(`/api/accounts/${encodeURIComponent(id)}`, { method: "DELETE" });
       if (!response.ok) throw new Error();
       if (activeAccountId === id) switchAccount("native:primary");
+      if (composeAccountId === id) {
+        setComposeAccountId("native:primary");
+        if (compose.draftId) localStorage.setItem(draftSenderKey(compose.draftId), "native:primary");
+      }
       await refreshAccounts();
     } catch {
       setError("Could not remove Gmail inbox");
@@ -362,6 +368,10 @@ export function App() {
         const data = await response.json() as { draft: DraftDetail };
         if (!response.ok) throw new Error();
         const draft = data.draft;
+        const savedSenderId = localStorage.getItem(draftSenderKey(draft.id));
+        const draftSenderId = savedSenderId && accounts.some((account) => account.id === savedSenderId && account.status === "active")
+          ? savedSenderId
+          : activeAccountId;
         setCompose({
           to: draft.to,
           cc: draft.cc,
@@ -372,6 +382,7 @@ export function App() {
           forwardMessageId: draft.forwardMessageId,
           draftId: draft.id,
         });
+        setComposeAccountId(draftSenderId);
         setComposeOpen(true);
       } catch {
         setError("Could not open message");
@@ -481,7 +492,10 @@ export function App() {
   };
 
   const startCompose = () => {
-    setCompose({ ...emptyCompose, draftId: crypto.randomUUID() });
+    const draftId = crypto.randomUUID();
+    setCompose({ ...emptyCompose, draftId });
+    setComposeAccountId(activeAccountId);
+    localStorage.setItem(draftSenderKey(draftId), activeAccountId);
     setFiles([]);
     setDraftStatus(null);
     setComposeOpen(true);
@@ -490,26 +504,37 @@ export function App() {
   const startReply = () => {
     if (!selected) return;
     const target = thread.at(-1) ?? selected;
+    const draftId = crypto.randomUUID();
     setCompose({
       ...emptyCompose,
       to: target.direction === "inbound" ? target.fromAddress : target.toAddresses[0] ?? "",
       subject: replySubject(target.subject),
       replyToMessageId: target.id,
-      draftId: crypto.randomUUID(),
+      draftId,
     });
+    setComposeAccountId(activeAccountId);
+    localStorage.setItem(draftSenderKey(draftId), activeAccountId);
     setComposeOpen(true);
   };
 
   const startForward = () => {
     if (!selected) return;
+    const draftId = crypto.randomUUID();
     setCompose({
       ...emptyCompose,
       subject: forwardSubject(selected.subject),
       text: forwardedBody(selected),
       forwardMessageId: selected.id,
-      draftId: crypto.randomUUID(),
+      draftId,
     });
+    setComposeAccountId(activeAccountId);
+    localStorage.setItem(draftSenderKey(draftId), activeAccountId);
     setComposeOpen(true);
+  };
+
+  const changeComposeAccount = (accountId: string) => {
+    setComposeAccountId(accountId);
+    if (compose.draftId) localStorage.setItem(draftSenderKey(compose.draftId), accountId);
   };
 
   const closeCompose = () => {
@@ -518,9 +543,13 @@ export function App() {
   };
 
   const discardCompose = async () => {
-    if (compose.draftId) await fetch(`/api/drafts/${encodeURIComponent(compose.draftId)}`, { method: "DELETE" }).catch(() => undefined);
+    if (compose.draftId) {
+      localStorage.removeItem(draftSenderKey(compose.draftId));
+      await fetch(`/api/drafts/${encodeURIComponent(compose.draftId)}`, { method: "DELETE" }).catch(() => undefined);
+    }
     setComposeOpen(false);
     setCompose(emptyCompose);
+    setComposeAccountId(activeAccountId);
     setFiles([]);
   };
 
@@ -529,7 +558,7 @@ export function App() {
     setSending(true);
     try {
       const form = new FormData();
-      form.set("accountId", activeAccountId);
+      form.set("accountId", composeAccountId);
       for (const key of ["to", "cc", "bcc", "subject", "text", "replyToMessageId", "forwardMessageId", "draftId"] as const) {
         if (compose[key]) form.set(key, compose[key]);
       }
@@ -537,9 +566,11 @@ export function App() {
       const response = await fetch("/api/send", { method: "POST", body: form });
       const data = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(data.error || "Email could not be sent");
+      if (compose.draftId) localStorage.removeItem(draftSenderKey(compose.draftId));
       setComposeOpen(false);
       setCompose(emptyCompose);
       setFiles([]);
+      if (composeAccountId !== activeAccountId) setActiveAccountId(composeAccountId);
       setFolder("sent");
       setSelected(null);
       setThread([]);
@@ -627,6 +658,9 @@ export function App() {
         files={files}
         sending={sending}
         draftStatus={draftStatus}
+        accounts={accounts}
+        senderAccountId={composeAccountId}
+        onSenderAccountChange={changeComposeAccount}
         onChange={setCompose}
         onFilesChange={setFiles}
         onClose={closeCompose}
