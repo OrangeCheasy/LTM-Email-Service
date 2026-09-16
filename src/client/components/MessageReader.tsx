@@ -8,6 +8,7 @@ import { SenderAvatar } from "./SenderAvatar";
 type MessageReaderProps = {
   message: MessageDetail | null;
   thread: MessageDetail[];
+  loading?: boolean;
   onBack: () => void;
   onReply: () => void;
   onForward: () => void;
@@ -24,14 +25,26 @@ function messageSecondary(message: MessageDetail): string {
     : message.fromName ? message.fromAddress : `to ${message.toAddresses.join(", ") || "you"}`;
 }
 
-export function MessageReader({ message, thread, onBack, onReply, onForward, onPatch }: MessageReaderProps) {
+export function MessageReader({ message, thread, loading = false, onBack, onReply, onForward, onPatch }: MessageReaderProps) {
   const [previewAttachment, setPreviewAttachment] = useState<MessageDetail["attachments"][number] | null>(null);
+
+  if (loading && !message) {
+    return (
+      <section className="reader-pane reader-empty">
+        <div className="reader-empty-card">
+          <div className="reader-empty-icon"><Icon name="mail" size={24}/></div>
+          <strong>Opening message…</strong>
+          <span>Loading the conversation.</span>
+        </div>
+      </section>
+    );
+  }
 
   if (!message) {
     return (
       <section className="reader-pane reader-empty">
         <div className="reader-empty-card">
-          <div className="reader-empty-icon"><Icon name="inbox" size={24} /></div>
+          <div className="reader-empty-icon"><Icon name="inbox" size={24}/></div>
           <strong>Select a message</strong>
           <span>Choose an email from the list to read it here.</span>
         </div>
@@ -44,20 +57,20 @@ export function MessageReader({ message, thread, onBack, onReply, onForward, onP
   return (
     <section className="reader-pane">
       <header className="reader-toolbar">
-        <button className="reader-back" type="button" onClick={onBack}><Icon name="back" size={18} /><span>Inbox</span></button>
+        <button className="reader-back" type="button" onClick={onBack}><Icon name="back" size={18}/><span>Inbox</span></button>
         <div className="reader-title-block">
           <h2>{message.subject || "(no subject)"}</h2>
           <span>{conversation.length > 1 ? `${conversation.length} messages in this conversation` : message.direction === "inbound" ? "Received message" : "Sent message"}</span>
         </div>
         <div className="reader-actions">
-          <button className={message.isStarred ? "active-star" : ""} type="button" onClick={() => onPatch({ isStarred: !message.isStarred })} aria-label={message.isStarred ? "Unstar message" : "Star message"}><Icon name="star" size={16} /><span>{message.isStarred ? "Unstar" : "Star"}</span></button>
+          <button className={message.isStarred ? "active-star" : ""} type="button" onClick={() => onPatch({ isStarred: !message.isStarred })} aria-label={message.isStarred ? "Unstar message" : "Star message"}><Icon name="star" size={16}/><span>{message.isStarred ? "Unstar" : "Star"}</span></button>
           {!message.isDeleted ? (
-            <button className="mobile-reader-action" type="button" onClick={() => onPatch({ isArchived: !message.isArchived }, true)} aria-label={message.isArchived ? "Unarchive message" : "Archive message"}><Icon name="archive" size={17} /><span>{message.isArchived ? "Unarchive" : "Archive"}</span></button>
+            <button className="mobile-reader-action" type="button" onClick={() => onPatch({ isArchived: !message.isArchived }, true)} aria-label={message.isArchived ? "Unarchive message" : "Archive message"}><Icon name="archive" size={17}/><span>{message.isArchived ? "Unarchive" : "Archive"}</span></button>
           ) : null}
           {!message.isDeleted ? (
-            <button className="mobile-reader-action destructive" type="button" onClick={() => onPatch({ isDeleted: true }, true)} aria-label="Delete message"><Icon name="trash" size={17} /><span>Delete</span></button>
+            <button className="mobile-reader-action destructive" type="button" onClick={() => onPatch({ isDeleted: true }, true)} aria-label="Delete message"><Icon name="trash" size={17}/><span>Delete</span></button>
           ) : (
-            <button className="mobile-reader-action" type="button" onClick={() => onPatch({ isDeleted: false }, true)} aria-label="Restore message"><Icon name="inbox" size={17} /><span>Restore</span></button>
+            <button className="mobile-reader-action" type="button" onClick={() => onPatch({ isDeleted: false }, true)} aria-label="Restore message"><Icon name="inbox" size={17}/><span>Restore</span></button>
           )}
         </div>
       </header>
@@ -67,7 +80,7 @@ export function MessageReader({ message, thread, onBack, onReply, onForward, onP
           <section key={item.id} className={`conversation-message ${item.id === message.id ? "conversation-current" : ""}`}>
             <div className="message-heading">
               <div className="message-heading-meta">
-                <SenderAvatar message={item} />
+                <SenderAvatar message={item}/>
                 <div>
                   <strong>{messageSender(item)}</strong>
                   <span>{messageSecondary(item)}</span>
@@ -81,7 +94,7 @@ export function MessageReader({ message, thread, onBack, onReply, onForward, onP
             <div className="message-content">
               <pre>{item.bodyText || "(No readable text content)"}</pre>
               {item.bodyHtmlAvailable ? (
-                <div className="security-note"><Icon name="lock" size={14} /><span>HTML is rendered safely. Remote tracking images stay blocked.</span></div>
+                <div className="security-note"><Icon name="lock" size={14}/><span>HTML is rendered safely. Remote tracking images stay blocked.</span></div>
               ) : null}
             </div>
 
@@ -101,7 +114,7 @@ export function MessageReader({ message, thread, onBack, onReply, onForward, onP
                         type="button"
                         onClick={() => setPreviewAttachment(attachment)}
                       >
-                        {isImage ? <img src={previewHref} alt="" loading="lazy" /> : <span className="attachment-card-icon"><Icon name="paperclip" size={17} /></span>}
+                        {isImage ? <img src={previewHref} alt="" loading="lazy"/> : <span className="attachment-card-icon"><Icon name="paperclip" size={17}/></span>}
                         <span className="attachment-card-copy"><strong>{attachment.filename}</strong><small>{formatBytes(attachment.size)}</small></span>
                       </button>
                     );
@@ -114,19 +127,19 @@ export function MessageReader({ message, thread, onBack, onReply, onForward, onP
       </article>
 
       <footer className="reader-reply-bar">
-        <button className="reply-primary" type="button" onClick={onReply}><Icon name="reply" size={17} />Reply</button>
-        <button type="button" onClick={onForward}><Icon name="forward" size={16} />Forward</button>
+        <button className="reply-primary" type="button" onClick={onReply}><Icon name="reply" size={17}/>Reply</button>
+        <button type="button" onClick={onForward}><Icon name="forward" size={16}/>Forward</button>
         {!message.isDeleted ? (
-          <button type="button" onClick={() => onPatch({ isArchived: !message.isArchived }, true)}><Icon name="archive" size={16} />{message.isArchived ? "Unarchive" : "Archive"}</button>
+          <button type="button" onClick={() => onPatch({ isArchived: !message.isArchived }, true)}><Icon name="archive" size={16}/>{message.isArchived ? "Unarchive" : "Archive"}</button>
         ) : null}
         {!message.isDeleted ? (
-          <button className="destructive" type="button" onClick={() => onPatch({ isDeleted: true }, true)}><Icon name="trash" size={16} />Delete</button>
+          <button className="destructive" type="button" onClick={() => onPatch({ isDeleted: true }, true)}><Icon name="trash" size={16}/>Delete</button>
         ) : (
-          <button type="button" onClick={() => onPatch({ isDeleted: false }, true)}><Icon name="inbox" size={16} />Restore</button>
+          <button type="button" onClick={() => onPatch({ isDeleted: false }, true)}><Icon name="inbox" size={16}/>Restore</button>
         )}
       </footer>
 
-      <AttachmentPreview attachment={previewAttachment} onClose={() => setPreviewAttachment(null)} />
+      <AttachmentPreview attachment={previewAttachment} onClose={() => setPreviewAttachment(null)}/>
     </section>
   );
 }
