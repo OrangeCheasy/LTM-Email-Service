@@ -35,21 +35,23 @@ function RichEmailBody({ html }: { html: string }) {
     const document = frame?.contentDocument;
     if (!frame || !document) return;
     requestAnimationFrame(() => {
-      const height = Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight ?? 0, 120);
-      frame.style.height = `${Math.min(height + 8, 12000)}px`;
+      const height = Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight ?? 0, 100);
+      frame.style.height = `${Math.min(height + 4, 12000)}px`;
     });
   };
 
   return (
-    <iframe
-      ref={frameRef}
-      className="rich-email-frame"
-      title="Email content"
-      srcDoc={srcDoc}
-      sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-      referrerPolicy="no-referrer"
-      onLoad={resizeFrame}
-    />
+    <div className="rich-email-shell">
+      <iframe
+        ref={frameRef}
+        className="rich-email-frame"
+        title="Email content"
+        srcDoc={srcDoc}
+        sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+        referrerPolicy="no-referrer"
+        onLoad={resizeFrame}
+      />
+    </div>
   );
 }
 
