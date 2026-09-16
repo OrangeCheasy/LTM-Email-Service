@@ -81,19 +81,3 @@ export async function googleContactPhotoSources(
 
   return results;
 }
-
-export async function googleContactPhotos(
-  env: Env,
-  accountId: string,
-  emails: string[],
-): Promise<Map<string, string>> {
-  const sources = await googleContactPhotoSources(env, accountId, emails);
-  const results = new Map<string, string>();
-  for (const email of sources.keys()) {
-    results.set(
-      email,
-      `/api/contact-avatar?accountId=${encodeURIComponent(accountId)}&email=${encodeURIComponent(email)}`,
-    );
-  }
-  return results;
-}
