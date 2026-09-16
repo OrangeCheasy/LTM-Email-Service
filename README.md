@@ -7,16 +7,16 @@ Private webmail for `contact@liamthemo.com`, deployed to Cloudflare at `email.li
 - **React + TypeScript + Vite** — private webmail UI
 - **Cloudflare Workers** — HTTP API and inbound `email()` handler
 - **Cloudflare Workers Static Assets** — frontend hosting
-- **Cloudflare D1** — message metadata, threads, state, drafts, and sent records
+- **Cloudflare D1** — message metadata, threads, state, drafts, sent records, and authentication state
 - **Cloudflare R2** — original RFC822/MIME messages and attachments
 - **Cloudflare Email Routing** — inbound mail for `contact@liamthemo.com`
 - **Cloudflare Email Service** — outbound mail from `contact@liamthemo.com`
-- **Cloudflare Access** — authentication in front of the private app
+- **Passkeys + trusted-device SMS verification** — private application authentication
 - **GitHub Actions** — CI and production deployment from `main`
 
 ## Project status
 
-This repository currently contains the v0.1 foundation: Cloudflare/Vite configuration, database schema, inbound email persistence, the API shell, responsive UI shell, and GitHub Actions. Mailbox features will be implemented incrementally on top of this base.
+This repository contains the private LTM Mails application and its Cloudflare Worker backend.
 
 ## Local setup
 
@@ -57,11 +57,25 @@ npm run dev
 ## Cloudflare configuration still required
 
 1. Point `email.liamthemo.com` at this Worker as a Worker custom domain.
-2. Protect the Worker/application with Cloudflare Access and allow only the intended account.
-3. Route `contact@liamthemo.com` to this Worker's `email()` handler.
-4. Optionally set `FORWARD_TO` in `wrangler.jsonc` to an existing verified inbox to retain a forwarded copy of incoming mail.
-5. Confirm the Email Service sending domain and `contact@liamthemo.com` sender are active.
-6. Replace the placeholder D1 ID before enabling production deployment.
+2. Route `contact@liamthemo.com` to this Worker's `email()` handler.
+3. Optionally set `FORWARD_TO` in `wrangler.jsonc` to an existing verified inbox to retain a forwarded copy of incoming mail.
+4. Confirm the Email Service sending domain and `contact@liamthemo.com` sender are active.
+5. Replace the placeholder D1 ID before enabling production deployment.
+
+## Trusted-device SMS second factor
+
+SMS verification is deliberately disabled unless **all** required backend secrets are present. Never commit the phone number or Twilio credentials to the repository.
+
+Configure these as Cloudflare Worker secrets:
+
+- `TWILIO_API_KEY`
+- `TWILIO_API_SECRET`
+- `TWILIO_VERIFY_SERVICE_SID`
+- `SMS_RECIPIENT_E164` — the private destination number in E.164 format
+
+Once all four are configured, a valid passkey on an unknown browser does **not** create a login session immediately. The backend sends an SMS verification through Twilio Verify, and the session is created only after the code succeeds. Successful verification installs a random HttpOnly trusted-device cookie so that browser does not require SMS on every future passkey login. The trusted-device lifetime is 180 days and the session lifetime remains 7 days.
+
+The phone number and Twilio credentials are read only by the Worker. They are never returned by the API or included in the frontend bundle.
 
 ## GitHub Actions deployment
 
@@ -70,16 +84,14 @@ Add these repository secrets:
 - `CLOUDFLARE_API_TOKEN`
 - `CLOUDFLARE_ACCOUNT_ID`
 
-After Cloudflare resources are configured, set the repository Actions variable `CLOUDFLARE_READY=true`. Pushes to `main` will then deploy automatically. Until that variable is enabled, CI still builds/type-checks the project but deployment is intentionally skipped.
+Pushes to `main` run the production deployment workflow.
 
 ## Security baseline
 
-- Cloudflare Access is the authentication boundary; no custom password database is planned.
+- Passkey authentication requires user verification.
+- Unknown browsers can require a server-side SMS second factor before a session is issued.
+- Trusted-browser tokens and session tokens are random, HttpOnly, Secure, SameSite=Strict cookies; only their hashes are stored in D1.
+- Authentication endpoints are rate limited.
 - Outbound email binding is restricted to `contact@liamthemo.com`.
 - Raw inbound messages are preserved in R2.
-- Email HTML will be sanitized before rendering and remote images will be blocked by default when the reader UI is implemented.
 - Secrets stay in Cloudflare/GitHub secret storage and must not be committed.
-
-## Planned v0.1 mailbox scope
-
-Inbox, sent, archive, trash, reader, compose/reply, correct email threading, HTML/text bodies, attachments, read/unread state, search, responsive UI, sent-message persistence, optional inbound forwarding, and basic delivery/error state.
