@@ -56,6 +56,7 @@ export function ComposeModal({
   const senderOptions = accounts.length ? accounts : [fallbackAccount];
   const activeSenderCount = senderOptions.filter((account) => account.status === "active").length;
   const currentSender = senderOptions.find((account) => account.id === senderAccountId) ?? fallbackAccount;
+  const canChooseSender = !senderLocked && (activeSenderCount > 1 || currentSender.status !== "active");
 
   return (
     <div className="compose-overlay" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target && !sending) onClose(); }}>
@@ -79,7 +80,7 @@ export function ComposeModal({
             <select
               aria-label="From address"
               value={currentSender.id}
-              disabled={sending || senderLocked || activeSenderCount < 2}
+              disabled={sending || !canChooseSender}
               onChange={(event) => onSenderAccountChange(event.target.value)}
               style={{ width: "100%", border: 0, outline: 0, background: "transparent", color: "var(--text)", fontSize: 12, fontFamily: "inherit" }}
             >
@@ -108,8 +109,8 @@ export function ComposeModal({
 
         <footer className="compose-footer">
           <label className="attach-control"><Icon name="paperclip" size={16} /><span>Attach</span><input type="file" multiple onChange={(event) => onFilesChange(Array.from(event.target.files ?? []))} /></label>
-          <span className="compose-from">{draftStatus === "saving" ? "Saving draft…" : draftStatus === "saved" ? "Draft saved" : `Sending as ${currentSender.emailAddress}`}</span>
-          <button className="send-control" type="submit" disabled={sending}><Icon name="send" size={15} />{sending ? "Sending…" : "Send"}</button>
+          <span className="compose-from">{draftStatus === "saving" ? "Saving draft…" : draftStatus === "saved" ? "Draft saved" : currentSender.status === "active" ? `Sending as ${currentSender.emailAddress}` : "Reconnect this sender to send"}</span>
+          <button className="send-control" type="submit" disabled={sending || currentSender.status !== "active"}><Icon name="send" size={15} />{sending ? "Sending…" : "Send"}</button>
         </footer>
       </form>
     </div>
