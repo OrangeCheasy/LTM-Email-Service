@@ -1,4 +1,20 @@
-import { ChangeEvent, PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ChangeEvent,
+  PointerEvent as ReactPointerEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  MAX_ZOOM,
+  clamp,
+  cropMetrics,
+  loadCropSource,
+  renderCroppedPhoto,
+  type CropSource,
+  type Point,
+} from "../profilePhoto";
 import { Icon } from "./Icon";
 
 type ProfileModalProps = {
@@ -8,92 +24,28 @@ type ProfileModalProps = {
   onPhotoChange: (url: string | null) => void;
 };
 
-type CropSource = {
-  url: string;
-  image: HTMLImageElement;
-  width: number;
-  height: number;
+type DragState = {
+  active: boolean;
+  startX: number;
+  startY: number;
+  origin: Point;
 };
 
-type Point = { x: number; y: number };
-
-const CROP_SIZE = 260;
-const MAX_ZOOM = 3;
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
-function cropMetrics(source: CropSource, zoom: number) {
-  const baseScale = Math.max(CROP_SIZE / source.width, CROP_SIZE / source.height);
-  const scale = baseScale * zoom;
-  const displayedWidth = source.width * scale;
-  const displayedHeight = source.height * scale;
-  return {
-    scale,
-    displayedWidth,
-    displayedHeight,
-    maxX: Math.max(0, (displayedWidth - CROP_SIZE) / 2),
-    maxY: Math.max(0, (displayedHeight - CROP_SIZE) / 2),
-  };
-}
-
-async function loadCropSource(file: File): Promise<CropSource> {
-  const url = URL.createObjectURL(file);
-  try {
-    const image = new Image();
-    image.decoding = "async";
-    await new Promise<void>((resolve, reject) => {
-      image.onload = () => resolve();
-      image.onerror = () => reject(new Error("That image could not be opened"));
-      image.src = url;
-    });
-    if (!image.naturalWidth || !image.naturalHeight) throw new Error("That image could not be opened");
-    return { url, image, width: image.naturalWidth, height: image.naturalHeight };
-  } catch (error) {
-    URL.revokeObjectURL(url);
-    throw error;
-  }
-}
-
-async function renderCroppedPhoto(source: CropSource, zoom: number, offset: Point): Promise<Blob> {
-  const metrics = cropMetrics(source, zoom);
-  const boundedX = clamp(offset.x, -metrics.maxX, metrics.maxX);
-  const boundedY = clamp(offset.y, -metrics.maxY, metrics.maxY);
-  const left = (CROP_SIZE - metrics.displayedWidth) / 2 + boundedX;
-  const top = (CROP_SIZE - metrics.displayedHeight) / 2 + boundedY;
-  const sx = Math.max(0, -left / metrics.scale);
-  const sy = Math.max(0, -top / metrics.scale);
-  const sw = Math.min(source.width - sx, CROP_SIZE / metrics.scale);
-  const sh = Math.min(source.height - sy, CROP_SIZE / metrics.scale);
-
-  const canvas = document.createElement("canvas");
-  canvas.width = 512;
-  canvas.height = 512;
-  const context = canvas.getContext("2d");
-  if (!context) throw new Error("Photo processing is unavailable");
-  context.imageSmoothingEnabled = true;
-  context.imageSmoothingQuality = "high";
-  context.drawImage(source.image, sx, sy, sw, sh, 0, 0, 512, 512);
-
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.9));
-  if (!blob) throw new Error("Photo processing failed");
-  return blob;
-}
+const EMPTY_OFFSET: Point = { x: 0, y: 0 };
 
 export function ProfileModal({ open, photoUrl, onClose, onPhotoChange }: ProfileModalProps) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const dragRef = useRef<{ active: boolean; startX: number; startY: number; origin: Point }>({
+  const dragRef = useRef<DragState>({
     active: false,
     startX: 0,
     startY: 0,
-    origin: { x: 0, y: 0 },
+    origin: EMPTY_OFFSET,
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cropSource, setCropSource] = useState<CropSource | null>(null);
   const [zoom, setZoom] = useState(1);
-  const [offset, setOffset] = useState<Point>({ x: 0, y: 0 });
+  const [offset, setOffset] = useState<Point>(EMPTY_OFFSET);
 
   useEffect(() => {
     return () => {
@@ -101,7 +53,10 @@ export function ProfileModal({ open, photoUrl, onClose, onPhotoChange }: Profile
     };
   }, [cropSource]);
 
-  const metrics = useMemo(() => cropSource ? cropMetrics(cropSource, zoom) : null, [cropSource, zoom]);
+  const metrics = useMemo(
+    () => cropSource ? cropMetrics(cropSource, zoom) : null,
+    [cropSource, zoom],
+  );
   const boundedOffset = useMemo(() => {
     if (!metrics) return offset;
     return {
@@ -111,6 +66,16 @@ export function ProfileModal({ open, photoUrl, onClose, onPhotoChange }: Profile
   }, [metrics, offset]);
 
   if (!open) return null;
+
+  const resetTransform = () => {
+    setZoom(1);
+    setOffset(EMPTY_OFFSET);
+  };
+
+  const clearCrop = () => {
+    setCropSource(null);
+    resetTransform();
+  };
 
   const announcePhotoChange = (url: string | null) => {
     onPhotoChange(url);
@@ -127,10 +92,13 @@ export function ProfileModal({ open, photoUrl, onClose, onPhotoChange }: Profile
     try {
       const nextSource = await loadCropSource(file);
       setCropSource(nextSource);
-      setZoom(1);
-      setOffset({ x: 0, y: 0 });
+      resetTransform();
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "That image could not be opened");
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "That image could not be opened",
+      );
     } finally {
       setBusy(false);
     }
@@ -143,31 +111,40 @@ export function ProfileModal({ open, photoUrl, onClose, onPhotoChange }: Profile
     try {
       const normalized = await renderCroppedPhoto(cropSource, zoom, boundedOffset);
       const form = new FormData();
-      form.append("photo", new File([normalized], "profile.jpg", { type: "image/jpeg" }));
-      const response = await fetch("/api/profile/photo", { method: "PUT", body: form });
-      const data = await response.json().catch(() => ({})) as { error?: string; version?: string };
-      if (!response.ok) throw new Error(data.error ?? "Could not save profile photo");
-      announcePhotoChange(`/api/profile/photo?v=${encodeURIComponent(data.version ?? String(Date.now()))}`);
-      setCropSource(null);
-      setZoom(1);
-      setOffset({ x: 0, y: 0 });
+      form.append(
+        "photo",
+        new File([normalized], "profile.jpg", { type: "image/jpeg" }),
+      );
+      const response = await fetch("/api/profile/photo", {
+        method: "PUT",
+        body: form,
+      });
+      const data = await response.json().catch(() => ({})) as {
+        error?: string;
+        version?: string;
+      };
+      if (!response.ok) {
+        throw new Error(data.error ?? "Could not save profile photo");
+      }
+
+      announcePhotoChange(
+        `/api/profile/photo?v=${encodeURIComponent(data.version ?? String(Date.now()))}`,
+      );
+      clearCrop();
     } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : "Could not save profile photo");
+      setError(
+        uploadError instanceof Error
+          ? uploadError.message
+          : "Could not save profile photo",
+      );
     } finally {
       setBusy(false);
     }
   };
 
   const cancelCrop = () => {
-    setCropSource(null);
-    setZoom(1);
-    setOffset({ x: 0, y: 0 });
+    clearCrop();
     setError(null);
-  };
-
-  const resetCrop = () => {
-    setZoom(1);
-    setOffset({ x: 0, y: 0 });
   };
 
   const changeZoom = (nextZoom: number) => {
@@ -204,7 +181,9 @@ export function ProfileModal({ open, photoUrl, onClose, onPhotoChange }: Profile
 
   const endDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
     dragRef.current.active = false;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
   };
 
   const removePhoto = async () => {
@@ -215,23 +194,40 @@ export function ProfileModal({ open, photoUrl, onClose, onPhotoChange }: Profile
       if (!response.ok) throw new Error("Could not remove profile photo");
       announcePhotoChange(null);
     } catch (removeError) {
-      setError(removeError instanceof Error ? removeError.message : "Could not remove profile photo");
+      setError(
+        removeError instanceof Error
+          ? removeError.message
+          : "Could not remove profile photo",
+      );
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div className="profile-modal-backdrop" role="dialog" aria-modal="true" aria-label="Profile settings" onMouseDown={(event) => {
-      if (event.currentTarget === event.target && !cropSource) onClose();
-    }}>
+    <div
+      className="profile-modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Profile settings"
+      onMouseDown={(event) => {
+        if (event.currentTarget === event.target && !cropSource) onClose();
+      }}
+    >
       <section className={`profile-modal ${cropSource ? "profile-modal-cropping" : ""}`}>
         <header>
           <div>
             <span className="eyebrow">Profile</span>
             <h2>{cropSource ? "Adjust profile photo" : "Mailbox profile"}</h2>
           </div>
-          <button className="profile-modal-close" type="button" aria-label={cropSource ? "Cancel photo adjustment" : "Close profile settings"} onClick={cropSource ? cancelCrop : onClose}>×</button>
+          <button
+            className="profile-modal-close"
+            type="button"
+            aria-label={cropSource ? "Cancel photo adjustment" : "Close profile settings"}
+            onClick={cropSource ? cancelCrop : onClose}
+          >
+            ×
+          </button>
         </header>
 
         {cropSource && metrics ? (
@@ -257,7 +253,9 @@ export function ProfileModal({ open, photoUrl, onClose, onPhotoChange }: Profile
               <div className="profile-crop-ring" aria-hidden="true" />
             </div>
 
-            <div className="profile-crop-help">Drag to reposition your photo inside the frame.</div>
+            <div className="profile-crop-help">
+              Drag to reposition your photo inside the frame.
+            </div>
 
             <div className="profile-crop-controls">
               <div className="profile-crop-zoom-row">
@@ -273,12 +271,21 @@ export function ProfileModal({ open, photoUrl, onClose, onPhotoChange }: Profile
                 />
                 <strong>{Math.round(zoom * 100)}%</strong>
               </div>
-              <button type="button" disabled={busy} onClick={resetCrop}>Reset</button>
+              <button type="button" disabled={busy} onClick={resetTransform}>
+                Reset
+              </button>
             </div>
 
             <div className="profile-crop-actions">
-              <button type="button" disabled={busy} onClick={cancelCrop}>Cancel</button>
-              <button className="profile-photo-primary" type="button" disabled={busy} onClick={() => void saveCrop()}>
+              <button type="button" disabled={busy} onClick={cancelCrop}>
+                Cancel
+              </button>
+              <button
+                className="profile-photo-primary"
+                type="button"
+                disabled={busy}
+                onClick={() => void saveCrop()}
+              >
                 {busy ? "Saving…" : "Save photo"}
               </button>
             </div>
@@ -291,26 +298,55 @@ export function ProfileModal({ open, photoUrl, onClose, onPhotoChange }: Profile
               </div>
               <div className="profile-photo-copy">
                 <strong>Profile photo</strong>
-                <span>This photo appears in the app header and beside messages you send inside LTM Mails.</span>
+                <span>
+                  This photo appears in the app header and beside messages you send inside LTM Mails.
+                </span>
                 <div className="profile-photo-actions">
-                  <button className="profile-photo-primary" type="button" disabled={busy} onClick={() => inputRef.current?.click()}>
-                    <Icon name="compose" size={15} />{busy ? "Working…" : photoUrl ? "Change photo" : "Choose photo"}
+                  <button
+                    className="profile-photo-primary"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => inputRef.current?.click()}
+                  >
+                    <Icon name="compose" size={15} />
+                    {busy ? "Working…" : photoUrl ? "Change photo" : "Choose photo"}
                   </button>
-                  {photoUrl ? <button type="button" disabled={busy} onClick={() => void removePhoto()}>Remove</button> : null}
+                  {photoUrl ? (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void removePhoto()}
+                    >
+                      Remove
+                    </button>
+                  ) : null}
                 </div>
               </div>
             </div>
 
             <div className="profile-outbound-note">
               <Icon name="send" size={14} />
-              <span>Your photo is used for outbound messages inside LTM Mails. External email apps choose their own sender avatar and may not display this photo.</span>
+              <span>
+                Your photo is used for outbound messages inside LTM Mails. External email apps choose their own sender avatar and may not display this photo.
+              </span>
             </div>
           </>
         )}
 
-        <input ref={inputRef} className="profile-photo-input" type="file" accept="image/*" onChange={(event) => void choosePhoto(event)} />
+        <input
+          ref={inputRef}
+          className="profile-photo-input"
+          type="file"
+          accept="image/*"
+          onChange={(event) => void choosePhoto(event)}
+        />
         {error ? <div className="profile-modal-error" role="alert">{error}</div> : null}
-        {!cropSource ? <div className="profile-modal-note"><Icon name="lock" size={14} /><span>Your profile photo is stored privately in your existing mail storage.</span></div> : null}
+        {!cropSource ? (
+          <div className="profile-modal-note">
+            <Icon name="lock" size={14} />
+            <span>Your profile photo is stored privately in your existing mail storage.</span>
+          </div>
+        ) : null}
       </section>
     </div>
   );
