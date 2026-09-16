@@ -1,85 +1,147 @@
 # LTM Email Service
 
-Private webmail for `contact@liamthemo.com`, deployed to Cloudflare at `email.liamthemo.com`.
+Private webmail for `contact@liamthemo.com`, deployed at `email.liamthemo.com`.
 
-## Architecture
+## Current architecture
 
-- **React + TypeScript + Vite** — private webmail UI
-- **Cloudflare Workers** — HTTP API and inbound `email()` handler
+- **React + TypeScript + Vite** — responsive webmail client
+- **Cloudflare Workers** — API, authentication, inbound email handling, and provider integrations
 - **Cloudflare Workers Static Assets** — frontend hosting
-- **Cloudflare D1** — message metadata, threads, state, drafts, and sent records
-- **Cloudflare R2** — original RFC822/MIME messages and attachments
+- **Cloudflare D1** — mail metadata/state, drafts, connected accounts, passkeys, sessions, and push subscriptions
+- **Cloudflare R2** — raw RFC822/MIME messages, attachments, and profile assets
 - **Cloudflare Email Routing** — inbound mail for `contact@liamthemo.com`
-- **Cloudflare Email Service** — outbound mail from `contact@liamthemo.com`
-- **Cloudflare Access** — authentication in front of the private app
-- **GitHub Actions** — CI and production deployment from `main`
+- **Cloudflare Email Service** — outbound mail for the native LTM mailbox
+- **WebAuthn/passkeys** — private application authentication with D1-backed sessions
+- **Gmail API** — optional connected Gmail inboxes and sending accounts
+- **Web Push / VAPID** — browser push notifications
+- **GitHub Actions + Wrangler** — validation and production deployment
 
-## Project status
+## Implemented mailbox features
 
-This repository currently contains the v0.1 foundation: Cloudflare/Vite configuration, database schema, inbound email persistence, the API shell, responsive UI shell, and GitHub Actions. Mailbox features will be implemented incrementally on top of this base.
+The app currently includes:
 
-## Local setup
+- inbox, starred, sent, drafts, archive, and trash folders
+- native `contact@liamthemo.com` mailbox plus connected Gmail accounts
+- account-aware compose/send
+- reply and forward flows with threading metadata
+- draft autosave
+- read/unread, star, archive, and trash mutations
+- search and automatic mailbox refresh
+- attachment download/preview support
+- sanitized rich HTML email rendering
+- blocked remote tracking images by default
+- passkey setup/login and session management
+- optional profile photo
+- browser push notifications
+- responsive mobile/PWA UI
+
+## Local development
 
 Requirements:
 
 - Node.js 22+
-- A Cloudflare account with Workers
-- Email Routing enabled for `liamthemo.com`
-- `contact@liamthemo.com` available to route to the Worker
-- The `liamthemo.com` domain onboarded to Cloudflare Email Service for outbound sending
+- a Cloudflare account with Workers, D1, R2, Email Routing, and Email Service configured
 
 Install dependencies:
 
 ```bash
-npm install
+npm ci
 ```
 
-Create the production resources once:
-
-```bash
-npx wrangler d1 create ltm-email-service
-npx wrangler r2 bucket create ltm-email-service-mail
-```
-
-Replace the placeholder D1 `database_id` in `wrangler.jsonc` with the ID returned by Cloudflare, then apply the schema:
-
-```bash
-npm run db:migrate:remote
-```
-
-For local development:
+Apply local migrations and start Vite:
 
 ```bash
 npm run db:migrate:local
 npm run dev
 ```
 
-## Cloudflare configuration still required
+Useful commands:
 
-1. Point `email.liamthemo.com` at this Worker as a Worker custom domain.
-2. Protect the Worker/application with Cloudflare Access and allow only the intended account.
-3. Route `contact@liamthemo.com` to this Worker's `email()` handler.
-4. Optionally set `FORWARD_TO` in `wrangler.jsonc` to an existing verified inbox to retain a forwarded copy of incoming mail.
-5. Confirm the Email Service sending domain and `contact@liamthemo.com` sender are active.
-6. Replace the placeholder D1 ID before enabling production deployment.
+```bash
+npm run typecheck
+npm run build
+npm run cf-typegen
+npm run db:migrate:remote
+```
 
-## GitHub Actions deployment
+## Cloudflare resources
 
-Add these repository secrets:
+`wrangler.jsonc` expects these bindings:
+
+- `DB` — D1 database `ltm-email-service`
+- `MAIL` — R2 bucket `ltm-email-service-mail`
+- `EMAIL` — outbound Email Service binding restricted to `contact@liamthemo.com`
+- `ASSETS` — Workers Static Assets
+
+Runtime variables include:
+
+- `PRIMARY_ADDRESS=contact@liamthemo.com`
+- `FORWARD_TO` — optional verified forwarding destination
+
+## Secrets and private configuration
+
+Configure sensitive values with Cloudflare secrets rather than committing them:
+
+- `AUTH_SETUP_TOKEN` — initial passkey setup authorization
+- `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` — push notifications
+- `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — Gmail OAuth
+- `PROVIDER_CREDENTIAL_KEY` — 32-byte base64url key used to encrypt provider credentials at rest
+
+GitHub Actions production deployment also requires:
 
 - `CLOUDFLARE_API_TOKEN`
 - `CLOUDFLARE_ACCOUNT_ID`
 
-After Cloudflare resources are configured, set the repository Actions variable `CLOUDFLARE_READY=true`. Pushes to `main` will then deploy automatically. Until that variable is enabled, CI still builds/type-checks the project but deployment is intentionally skipped.
+## Authentication
 
-## Security baseline
+The app uses its own WebAuthn/passkey authentication layer rather than Cloudflare Access.
 
-- Cloudflare Access is the authentication boundary; no custom password database is planned.
-- Outbound email binding is restricted to `contact@liamthemo.com`.
-- Raw inbound messages are preserved in R2.
-- Email HTML will be sanitized before rendering and remote images will be blocked by default when the reader UI is implemented.
-- Secrets stay in Cloudflare/GitHub secret storage and must not be committed.
+Passkeys are stored in D1 as public-key credentials. Successful authentication creates a secure, HTTP-only, same-site session cookie backed by a hashed session token in D1. Session and registration/login challenges are automatically expired and cleaned up.
 
-## Planned v0.1 mailbox scope
+The initial passkey is registered using `AUTH_SETUP_TOKEN`. Once at least one passkey exists, additional passkeys require an authenticated session.
 
-Inbox, sent, archive, trash, reader, compose/reply, correct email threading, HTML/text bodies, attachments, read/unread state, search, responsive UI, sent-message persistence, optional inbound forwarding, and basic delivery/error state.
+## Email security
+
+- outbound native sending is restricted to `contact@liamthemo.com`
+- raw inbound messages are preserved in R2
+- inbound HTML is sanitized before rendering
+- dangerous markup is removed and remote tracking images are blocked by default
+- attachments are served with restrictive content/security headers
+- API responses are `private, no-store` and protected by same-origin checks
+- provider OAuth credentials are encrypted before storage
+
+## CI and deployment
+
+Pull requests run the development validation workflow, which:
+
+1. installs dependencies with `npm ci`
+2. generates and validates the browser favicon
+3. runs TypeScript checks
+4. builds the application
+
+Pushes to `v1.02` also run validation.
+
+Production deployment runs **only** on pushes to `main`. The production workflow builds the app, applies remote D1 migrations, and deploys the Worker through Wrangler.
+
+## Repository structure
+
+```text
+src/client/                 React client and UI
+src/client/components/      reusable UI components
+src/worker/                 Cloudflare Worker entry point and shared server logic
+src/worker/api/             authenticated API handlers
+src/worker/email/           inbound/outbound email processing
+src/worker/providers/       native/Gmail provider abstraction and OAuth helpers
+migrations/                 D1 schema migrations
+public/                     PWA/static assets
+scripts/                    build/asset helper scripts
+.github/workflows/          validation and production deployment
+```
+
+## Production verification
+
+After deployment:
+
+- the passkey screen should load at `email.liamthemo.com`
+- `GET /api/health` should report the configured D1/R2 bindings after authentication
+- native inbound/outbound mail and any connected Gmail account should be validated manually after changes that touch those paths

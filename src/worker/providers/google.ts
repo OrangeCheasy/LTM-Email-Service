@@ -1,4 +1,330 @@
-import{APP_ORIGIN}from"../config";import{decryptSecret,encryptSecret}from"./crypto";const REDIRECT=`${APP_ORIGIN}/api/accounts/gmail/callback`,GMAIL_SCOPE="https://www.googleapis.com/auth/gmail.modify",PROFILE_SCOPE="https://www.googleapis.com/auth/userinfo.profile",CONTACTS_SCOPE="https://www.googleapis.com/auth/contacts.readonly",SCOPE=`${GMAIL_SCOPE} ${PROFILE_SCOPE} ${CONTACTS_SCOPE}`,STATE_TTL=600,TOKEN_ENDPOINT="https://oauth2.googleapis.com/token",REVOKE_ENDPOINT="https://oauth2.googleapis.com/revoke";type TokenResponse={access_token?:string;refresh_token?:string;expires_in?:number;scope?:string;token_type?:string};type Profile={emailAddress?:string;historyId?:string};const enc=new TextEncoder();function b64(bytes:Uint8Array){let s="";for(const b of bytes)s+=String.fromCharCode(b);return btoa(s).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/g,"")}async function hash(v:string){return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",enc.encode(v)))).map(b=>b.toString(16).padStart(2,"0")).join("")}function random(n=32){return b64(crypto.getRandomValues(new Uint8Array(n)))}async function challenge(v:string){return b64(new Uint8Array(await crypto.subtle.digest("SHA-256",enc.encode(v))))}function configured(env:Env){if(!env.GOOGLE_CLIENT_ID||!env.GOOGLE_CLIENT_SECRET||!env.PROVIDER_CREDENTIAL_KEY)throw new Error("Gmail connection is not configured")}function hasScope(scope:string,required=GMAIL_SCOPE){return scope.split(/\s+/).includes(required)}async function revoke(token:string){try{await fetch(REVOKE_ENDPOINT,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({token})})}catch{}}
-export async function startGoogleOAuth(env:Env):Promise<Response>{try{configured(env)}catch{return Response.json({error:"Gmail connection is not configured"},{status:503})}const state=random(),verifier=random(48),idHash=await hash(state),expires=new Date(Date.now()+STATE_TTL*1000).toISOString();await env.DB.prepare("DELETE FROM oauth_states WHERE expires_at <= CURRENT_TIMESTAMP").run();await env.DB.prepare("INSERT INTO oauth_states (id_hash,provider,pkce_verifier_encrypted,expires_at) VALUES (?1,'gmail',?2,?3)").bind(idHash,await encryptSecret(env,{verifier},`oauth:${idHash}`),expires).run();const q=new URLSearchParams({client_id:env.GOOGLE_CLIENT_ID!,redirect_uri:REDIRECT,response_type:"code",scope:SCOPE,access_type:"offline",prompt:"consent",state,code_challenge:await challenge(verifier),code_challenge_method:"S256",include_granted_scopes:"false"});return Response.json({authorizationUrl:`https://accounts.google.com/o/oauth2/v2/auth?${q}`})}
-export async function googleOAuthCallback(request:Request,env:Env):Promise<Response>{try{configured(env)}catch{return Response.redirect(`${APP_ORIGIN}/?gmail=configuration_error`,303)}const url=new URL(request.url),state=url.searchParams.get("state")??"",code=url.searchParams.get("code")??"",oauthError=url.searchParams.get("error");if(oauthError)return Response.redirect(`${APP_ORIGIN}/?gmail=cancelled`,303);if(!state||!code)return Response.redirect(`${APP_ORIGIN}/?gmail=invalid_callback`,303);const idHash=await hash(state),row=await env.DB.prepare("DELETE FROM oauth_states WHERE id_hash = ?1 AND provider = 'gmail' AND expires_at > CURRENT_TIMESTAMP RETURNING pkce_verifier_encrypted").bind(idHash).first<{pkce_verifier_encrypted:string}>();if(!row)return Response.redirect(`${APP_ORIGIN}/?gmail=expired`,303);let verifier:string;try{verifier=(await decryptSecret<{verifier:string}>(env,row.pkce_verifier_encrypted,`oauth:${idHash}`)).verifier}catch{return Response.redirect(`${APP_ORIGIN}/?gmail=invalid_state`,303)}const body=new URLSearchParams({code,client_id:env.GOOGLE_CLIENT_ID!,client_secret:env.GOOGLE_CLIENT_SECRET!,redirect_uri:REDIRECT,grant_type:"authorization_code",code_verifier:verifier});let token:TokenResponse;try{const r=await fetch(TOKEN_ENDPOINT,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body});if(!r.ok)return Response.redirect(`${APP_ORIGIN}/?gmail=exchange_failed`,303);token=await r.json<TokenResponse>()}catch{return Response.redirect(`${APP_ORIGIN}/?gmail=exchange_failed`,303)}if(!token.access_token||!token.refresh_token||!hasScope(token.scope??"")||!hasScope(token.scope??"",CONTACTS_SCOPE)){if(token.refresh_token)await revoke(token.refresh_token);else if(token.access_token)await revoke(token.access_token);return Response.redirect(`${APP_ORIGIN}/?gmail=authorization_incomplete`,303)}let profile:Profile;try{const r=await fetch("https://gmail.googleapis.com/gmail/v1/users/me/profile",{headers:{Authorization:`Bearer ${token.access_token}`}});if(!r.ok){await revoke(token.refresh_token);return Response.redirect(`${APP_ORIGIN}/?gmail=profile_failed`,303)}profile=await r.json<Profile>()}catch{await revoke(token.refresh_token);return Response.redirect(`${APP_ORIGIN}/?gmail=profile_failed`,303)}const email=profile.emailAddress?.trim().toLowerCase();if(!email){await revoke(token.refresh_token);return Response.redirect(`${APP_ORIGIN}/?gmail=profile_failed`,303)}const accountId=`gmail:${await hash(email)}`,expiresAt=new Date(Date.now()+Math.max(60,token.expires_in??3600)*1000).toISOString(),credential={refreshToken:token.refresh_token,accessToken:token.access_token,accessTokenExpiresAt:expiresAt,scope:token.scope};let encrypted:string;try{encrypted=await encryptSecret(env,credential,`credential:${accountId}`)}catch{await revoke(token.refresh_token);return Response.redirect(`${APP_ORIGIN}/?gmail=storage_failed`,303)}try{await env.DB.batch([env.DB.prepare(`INSERT INTO connected_accounts (id,provider,provider_account_id,email_address,display_name,status,sync_cursor,last_synced_at,updated_at) VALUES (?1,'gmail',?2,?3,NULL,'active',?4,NULL,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET email_address=excluded.email_address,status='active',sync_cursor=COALESCE(excluded.sync_cursor,connected_accounts.sync_cursor),updated_at=CURRENT_TIMESTAMP`).bind(accountId,email,email,profile.historyId??null),env.DB.prepare(`INSERT INTO provider_credentials (account_id,encrypted_blob,key_version,expires_at,updated_at) VALUES (?1,?2,1,?3,CURRENT_TIMESTAMP) ON CONFLICT(account_id) DO UPDATE SET encrypted_blob=excluded.encrypted_blob,key_version=excluded.key_version,expires_at=excluded.expires_at,updated_at=CURRENT_TIMESTAMP`).bind(accountId,encrypted,expiresAt)])}catch{await revoke(token.refresh_token);return Response.redirect(`${APP_ORIGIN}/?gmail=storage_failed`,303)}return Response.redirect(`${APP_ORIGIN}/?gmail=connected`,303)}
-export async function disconnectGoogle(accountId:string,env:Env):Promise<Response>{if(!accountId.startsWith("gmail:"))return Response.json({error:"Gmail account not found"},{status:404});const account=await env.DB.prepare("SELECT id FROM connected_accounts WHERE id=?1 AND provider='gmail'").bind(accountId).first<{id:string}>();if(!account)return Response.json({ok:true});const row=await env.DB.prepare("SELECT encrypted_blob FROM provider_credentials WHERE account_id=?1").bind(accountId).first<{encrypted_blob:string}>();if(row){try{const c=await decryptSecret<{refreshToken:string}>(env,row.encrypted_blob,`credential:${accountId}`);if(c.refreshToken)await revoke(c.refreshToken)}catch{}}try{await env.DB.prepare("DELETE FROM connected_accounts WHERE id=?1 AND provider='gmail'").bind(accountId).run()}catch{return Response.json({error:"Could not remove Gmail account"},{status:500})}return Response.json({ok:true})}
+import { APP_ORIGIN } from "../config";
+import { decryptSecret, encryptSecret } from "./crypto";
+import {
+  GOOGLE_REVOKE_ENDPOINT,
+  GOOGLE_SCOPE,
+  GOOGLE_TOKEN_ENDPOINT,
+  hasRequiredGoogleScopes,
+  requireGoogleConfig,
+} from "./googleConfig";
+
+const REDIRECT_URI = `${APP_ORIGIN}/api/accounts/gmail/callback`;
+const OAUTH_STATE_TTL_SECONDS = 600;
+const encoder = new TextEncoder();
+
+type TokenResponse = {
+  access_token?: string;
+  refresh_token?: string;
+  expires_in?: number;
+  scope?: string;
+  token_type?: string;
+};
+
+type GmailProfile = {
+  emailAddress?: string;
+  historyId?: string;
+};
+
+type OAuthStateRow = {
+  pkce_verifier_encrypted: string;
+};
+
+function toBase64Url(bytes: Uint8Array): string {
+  let value = "";
+  for (const byte of bytes) value += String.fromCharCode(byte);
+  return btoa(value)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", encoder.encode(value));
+  return Array.from(
+    new Uint8Array(digest),
+    (byte) => byte.toString(16).padStart(2, "0"),
+  ).join("");
+}
+
+function randomBase64Url(byteLength = 32): string {
+  return toBase64Url(crypto.getRandomValues(new Uint8Array(byteLength)));
+}
+
+async function pkceChallenge(verifier: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", encoder.encode(verifier));
+  return toBase64Url(new Uint8Array(digest));
+}
+
+async function revokeGoogleToken(token: string): Promise<void> {
+  try {
+    await fetch(GOOGLE_REVOKE_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ token }),
+    });
+  } catch {
+    // Best-effort revocation. Local credential removal still proceeds.
+  }
+}
+
+function redirectWithStatus(status: string): Response {
+  return Response.redirect(`${APP_ORIGIN}/?gmail=${encodeURIComponent(status)}`, 303);
+}
+
+export async function startGoogleOAuth(env: Env): Promise<Response> {
+  try {
+    requireGoogleConfig(env);
+  } catch {
+    return Response.json({ error: "Gmail connection is not configured" }, { status: 503 });
+  }
+
+  const state = randomBase64Url();
+  const verifier = randomBase64Url(48);
+  const stateHash = await sha256Hex(state);
+  const expiresAt = new Date(Date.now() + OAUTH_STATE_TTL_SECONDS * 1000).toISOString();
+
+  await env.DB.prepare("DELETE FROM oauth_states WHERE expires_at <= CURRENT_TIMESTAMP").run();
+  await env.DB.prepare(`
+    INSERT INTO oauth_states (
+      id_hash,
+      provider,
+      pkce_verifier_encrypted,
+      expires_at
+    )
+    VALUES (?1, 'gmail', ?2, ?3)
+  `)
+    .bind(
+      stateHash,
+      await encryptSecret(env, { verifier }, `oauth:${stateHash}`),
+      expiresAt,
+    )
+    .run();
+
+  const query = new URLSearchParams({
+    client_id: env.GOOGLE_CLIENT_ID,
+    redirect_uri: REDIRECT_URI,
+    response_type: "code",
+    scope: GOOGLE_SCOPE,
+    access_type: "offline",
+    prompt: "consent",
+    state,
+    code_challenge: await pkceChallenge(verifier),
+    code_challenge_method: "S256",
+    include_granted_scopes: "false",
+  });
+
+  return Response.json({
+    authorizationUrl: `https://accounts.google.com/o/oauth2/v2/auth?${query}`,
+  });
+}
+
+export async function googleOAuthCallback(request: Request, env: Env): Promise<Response> {
+  try {
+    requireGoogleConfig(env);
+  } catch {
+    return redirectWithStatus("configuration_error");
+  }
+
+  const url = new URL(request.url);
+  const state = url.searchParams.get("state") ?? "";
+  const code = url.searchParams.get("code") ?? "";
+  const oauthError = url.searchParams.get("error");
+
+  if (oauthError) return redirectWithStatus("cancelled");
+  if (!state || !code) return redirectWithStatus("invalid_callback");
+
+  const stateHash = await sha256Hex(state);
+  const stateRow = await env.DB.prepare(`
+    DELETE FROM oauth_states
+    WHERE id_hash = ?1
+      AND provider = 'gmail'
+      AND expires_at > CURRENT_TIMESTAMP
+    RETURNING pkce_verifier_encrypted
+  `)
+    .bind(stateHash)
+    .first<OAuthStateRow>();
+  if (!stateRow) return redirectWithStatus("expired");
+
+  let verifier: string;
+  try {
+    verifier = (
+      await decryptSecret<{ verifier: string }>(
+        env,
+        stateRow.pkce_verifier_encrypted,
+        `oauth:${stateHash}`,
+      )
+    ).verifier;
+  } catch {
+    return redirectWithStatus("invalid_state");
+  }
+
+  const tokenRequest = new URLSearchParams({
+    code,
+    client_id: env.GOOGLE_CLIENT_ID,
+    client_secret: env.GOOGLE_CLIENT_SECRET,
+    redirect_uri: REDIRECT_URI,
+    grant_type: "authorization_code",
+    code_verifier: verifier,
+  });
+
+  let token: TokenResponse;
+  try {
+    const response = await fetch(GOOGLE_TOKEN_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: tokenRequest,
+    });
+    if (!response.ok) return redirectWithStatus("exchange_failed");
+    token = await response.json<TokenResponse>();
+  } catch {
+    return redirectWithStatus("exchange_failed");
+  }
+
+  const grantedScope = token.scope ?? "";
+  if (
+    !token.access_token
+    || !token.refresh_token
+    || !hasRequiredGoogleScopes(grantedScope)
+  ) {
+    if (token.refresh_token) await revokeGoogleToken(token.refresh_token);
+    else if (token.access_token) await revokeGoogleToken(token.access_token);
+    return redirectWithStatus("authorization_incomplete");
+  }
+
+  let profile: GmailProfile;
+  try {
+    const response = await fetch(
+      "https://gmail.googleapis.com/gmail/v1/users/me/profile",
+      { headers: { Authorization: `Bearer ${token.access_token}` } },
+    );
+    if (!response.ok) {
+      await revokeGoogleToken(token.refresh_token);
+      return redirectWithStatus("profile_failed");
+    }
+    profile = await response.json<GmailProfile>();
+  } catch {
+    await revokeGoogleToken(token.refresh_token);
+    return redirectWithStatus("profile_failed");
+  }
+
+  const email = profile.emailAddress?.trim().toLowerCase();
+  if (!email) {
+    await revokeGoogleToken(token.refresh_token);
+    return redirectWithStatus("profile_failed");
+  }
+
+  const accountId = `gmail:${await sha256Hex(email)}`;
+  const expiresAt = new Date(
+    Date.now() + Math.max(60, token.expires_in ?? 3600) * 1000,
+  ).toISOString();
+  const credential = {
+    refreshToken: token.refresh_token,
+    accessToken: token.access_token,
+    accessTokenExpiresAt: expiresAt,
+    scope: grantedScope,
+  };
+
+  let encryptedCredential: string;
+  try {
+    encryptedCredential = await encryptSecret(
+      env,
+      credential,
+      `credential:${accountId}`,
+    );
+  } catch {
+    await revokeGoogleToken(token.refresh_token);
+    return redirectWithStatus("storage_failed");
+  }
+
+  try {
+    await env.DB.batch([
+      env.DB.prepare(`
+        INSERT INTO connected_accounts (
+          id,
+          provider,
+          provider_account_id,
+          email_address,
+          display_name,
+          status,
+          sync_cursor,
+          last_synced_at,
+          updated_at
+        )
+        VALUES (?1, 'gmail', ?2, ?3, NULL, 'active', ?4, NULL, CURRENT_TIMESTAMP)
+        ON CONFLICT(id) DO UPDATE SET
+          email_address = excluded.email_address,
+          status = 'active',
+          sync_cursor = COALESCE(excluded.sync_cursor, connected_accounts.sync_cursor),
+          updated_at = CURRENT_TIMESTAMP
+      `).bind(accountId, email, email, profile.historyId ?? null),
+      env.DB.prepare(`
+        INSERT INTO provider_credentials (
+          account_id,
+          encrypted_blob,
+          key_version,
+          expires_at,
+          updated_at
+        )
+        VALUES (?1, ?2, 1, ?3, CURRENT_TIMESTAMP)
+        ON CONFLICT(account_id) DO UPDATE SET
+          encrypted_blob = excluded.encrypted_blob,
+          key_version = excluded.key_version,
+          expires_at = excluded.expires_at,
+          updated_at = CURRENT_TIMESTAMP
+      `).bind(accountId, encryptedCredential, expiresAt),
+    ]);
+  } catch {
+    await revokeGoogleToken(token.refresh_token);
+    return redirectWithStatus("storage_failed");
+  }
+
+  return redirectWithStatus("connected");
+}
+
+export async function disconnectGoogle(accountId: string, env: Env): Promise<Response> {
+  if (!accountId.startsWith("gmail:")) {
+    return Response.json({ error: "Gmail account not found" }, { status: 404 });
+  }
+
+  const account = await env.DB.prepare(`
+    SELECT id
+    FROM connected_accounts
+    WHERE id = ?1 AND provider = 'gmail'
+  `)
+    .bind(accountId)
+    .first<{ id: string }>();
+  if (!account) return Response.json({ ok: true });
+
+  const credentialRow = await env.DB.prepare(`
+    SELECT encrypted_blob
+    FROM provider_credentials
+    WHERE account_id = ?1
+  `)
+    .bind(accountId)
+    .first<{ encrypted_blob: string }>();
+
+  if (credentialRow) {
+    try {
+      const credential = await decryptSecret<{ refreshToken: string }>(
+        env,
+        credentialRow.encrypted_blob,
+        `credential:${accountId}`,
+      );
+      if (credential.refreshToken) await revokeGoogleToken(credential.refreshToken);
+    } catch {
+      // A corrupt credential should not prevent local account removal.
+    }
+  }
+
+  try {
+    await env.DB.prepare(
+      "DELETE FROM connected_accounts WHERE id = ?1 AND provider = 'gmail'",
+    )
+      .bind(accountId)
+      .run();
+  } catch {
+    return Response.json({ error: "Could not remove Gmail account" }, { status: 500 });
+  }
+
+  return Response.json({ ok: true });
+}

@@ -9,11 +9,11 @@ type Entry = {
   body: string;
 };
 
-function cacheKey(url: URL) {
+function cacheKey(url: URL): string {
   return `${PREFIX}${url.pathname}?${url.searchParams.toString()}`;
 }
 
-function cacheablePath(url: URL) {
+function cacheablePath(url: URL): boolean {
   return url.pathname === "/api/messages" || /^\/api\/messages\/[^/]+$/.test(url.pathname);
 }
 
@@ -32,7 +32,7 @@ function read(key: string): Entry | null {
   }
 }
 
-function responseFrom(entry: Entry) {
+function responseFrom(entry: Entry): Response {
   return new Response(entry.body, {
     status: entry.status,
     statusText: entry.statusText,
@@ -40,7 +40,7 @@ function responseFrom(entry: Entry) {
   });
 }
 
-async function store(key: string, response: Response) {
+async function store(key: string, response: Response): Promise<void> {
   if (!response.ok) return;
   try {
     const clone = response.clone();
@@ -58,10 +58,10 @@ async function store(key: string, response: Response) {
   }
 }
 
-export function clearAllMailCache() {
+function clearAllMailCache(): void {
   try {
-    for (let i = sessionStorage.length - 1; i >= 0; i--) {
-      const key = sessionStorage.key(i);
+    for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
+      const key = sessionStorage.key(index);
       if (key?.startsWith(PREFIX)) sessionStorage.removeItem(key);
     }
   } catch {
@@ -69,7 +69,7 @@ export function clearAllMailCache() {
   }
 }
 
-export function installMailFetchCache() {
+export function installMailFetchCache(): void {
   const original = window.fetch.bind(window);
 
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -95,11 +95,11 @@ export function installMailFetchCache() {
 
     const network = await original(request);
     if (
-      network.ok &&
-      sameOrigin &&
-      request.method !== "GET" &&
-      request.method !== "HEAD" &&
-      url.pathname.startsWith("/api/")
+      network.ok
+      && sameOrigin
+      && request.method !== "GET"
+      && request.method !== "HEAD"
+      && url.pathname.startsWith("/api/")
     ) {
       clearAllMailCache();
     }
