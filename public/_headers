@@ -13,11 +13,12 @@
 /manifest.webmanifest
   Cache-Control: no-cache
 
-/favicon.svg
-  Cache-Control: no-cache
+/favicon.png
+  Cache-Control: no-store, max-age=0
 
 /favicon.ico
-  Cache-Control: no-cache
+  Cache-Control: no-store, max-age=0
+  Content-Type: image/png
 
 /apple-touch-icon.png
   Cache-Control: no-cache
