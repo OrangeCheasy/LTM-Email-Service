@@ -52,26 +52,17 @@ export function buildSafeEmailDocument(html: string): string {
     element.removeAttribute("poster");
   });
 
-  const csp = document.createElement("meta");
-  csp.httpEquiv = "Content-Security-Policy";
-  csp.content = "default-src 'none'; img-src data: cid:; style-src 'unsafe-inline'; font-src data:; script-src 'none'; connect-src 'none'; object-src 'none'; frame-src 'none'; child-src 'none'; media-src 'none'; form-action 'none'; base-uri 'none'";
+  const securityHead = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: cid:; style-src 'unsafe-inline'; font-src data:; script-src 'none'; connect-src 'none'; object-src 'none'; frame-src 'none'; child-src 'none'; media-src 'none'; form-action 'none'; base-uri 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body { margin: 0; padding: 0; min-width: 0; background: transparent; }
+  body { overflow-wrap: anywhere; word-break: normal; }
+  img, table { max-width: 100% !important; }
+  img { height: auto !important; }
+  pre { white-space: pre-wrap; }
+  a { cursor: pointer; }
+</style>`;
 
-  const viewport = document.createElement("meta");
-  viewport.name = "viewport";
-  viewport.content = "width=device-width, initial-scale=1";
-
-  const safetyStyles = document.createElement("style");
-  safetyStyles.textContent = `
-    html, body { margin: 0; padding: 0; min-width: 0; background: transparent; }
-    body { overflow-wrap: anywhere; word-break: normal; }
-    img, table { max-width: 100% !important; }
-    img { height: auto !important; }
-    pre { white-space: pre-wrap; }
-    a { cursor: pointer; }
-  `;
-
-  document.head.prepend(safetyStyles);
-  document.head.prepend(viewport);
-  document.head.prepend(csp);
+  document.head.innerHTML = securityHead + document.head.innerHTML;
   return `<!doctype html>${document.documentElement.outerHTML}`;
 }
