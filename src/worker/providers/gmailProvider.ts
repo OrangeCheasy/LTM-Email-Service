@@ -1,5 +1,4 @@
 import { getGoogleAccessToken } from "./googleCredentials";
-import { googleContactPhotos } from "./googleContacts";
 import type { MailProvider, ProviderListOptions, ProviderMessage, ProviderMutation, ProviderSendInput, ProviderSendResult } from "./types";
 
 const API = "https://gmail.googleapis.com/gmail/v1/users/me";
@@ -105,20 +104,6 @@ function item(message: GmailMessage): ProviderMessage {
   };
 }
 
-async function photos(env: Env, accountId: string, messages: ProviderMessage[]) {
-  try {
-    const map = await googleContactPhotos(
-      env,
-      accountId,
-      messages.filter((message) => message.direction === "inbound").map((message) => message.fromAddress),
-    );
-    for (const message of messages) message.senderAvatarUrl = map.get(message.fromAddress.trim().toLowerCase()) ?? null;
-  } catch {
-    // Contact photos are optional and should never block mail functionality.
-  }
-  return messages;
-}
-
 async function mapLimit<T, R>(values: T[], concurrency: number, mapper: (value: T, index: number) => Promise<R>) {
   const results = new Array<R>(values.length);
   let cursor = 0;
@@ -196,10 +181,9 @@ const q = (folder: string) => folder === "inbox"
           ? "-in:inbox -in:sent -in:trash -in:spam -in:drafts"
           : "";
 
-export async function gmailFullMessage(env: Env, accountId: string, id: string, includePhotos = true) {
+export async function gmailFullMessage(env: Env, accountId: string, id: string, _includePhotos = false) {
   const raw = await (await call(env, accountId, `/messages/${encodeURIComponent(id)}?format=full`)).json<GmailMessage>();
   const base = item(raw);
-  if (includePhotos) await photos(env, accountId, [base]);
   const attachments = parts(raw.payload)
     .filter((part) => part.filename && part.body?.attachmentId)
     .map((part) => ({
@@ -222,11 +206,10 @@ export async function gmailFullMessage(env: Env, accountId: string, id: string, 
   };
 }
 
-export async function gmailThread(env: Env, accountId: string, threadId: string, includePhotos = true) {
+export async function gmailThread(env: Env, accountId: string, threadId: string, _includePhotos = false) {
   const thread = await (await call(env, accountId, `/threads/${encodeURIComponent(threadId)}?format=full`)).json<{ messages?: GmailMessage[] }>();
   const raw = (thread.messages ?? []).slice(-100);
   const bases = raw.map(item);
-  if (includePhotos) await photos(env, accountId, bases);
   return raw.map((message, index) => {
     const base = bases[index];
     return {
@@ -276,7 +259,7 @@ export function gmailProvider(env: Env, accountId: string, email: string): MailP
         `/messages?maxResults=${Math.min(options.limit, 50)}&q=${encodeURIComponent(query)}`,
       )).json<{ messages?: Array<{ id: string }> }>();
       const refs = listing.messages ?? [];
-      const out = await mapLimit(refs, METADATA_CONCURRENCY, async (entry) => {
+      return mapLimit(refs, METADATA_CONCURRENCY, async (entry) => {
         const message = await (await call(
           env,
           accountId,
@@ -284,7 +267,6 @@ export function gmailProvider(env: Env, accountId: string, email: string): MailP
         )).json<GmailMessage>();
         return item(message);
       });
-      return photos(env, accountId, out);
     },
 
     async getMessage(id) {
@@ -294,7 +276,7 @@ export function gmailProvider(env: Env, accountId: string, email: string): MailP
           accountId,
           `/messages/${encodeURIComponent(id)}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject`,
         )).json<GmailMessage>();
-        return (await photos(env, accountId, [item(message)]))[0];
+        return item(message);
       } catch {
         return null;
       }
