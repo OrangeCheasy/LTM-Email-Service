@@ -1,3 +1,5 @@
+import PostalMime from "postal-mime";
+import { sanitizeEmailHtml } from "../email/html";
 import { resolveProvider } from "../providers/registry";
 import { gmailAttachment, gmailFullMessage, gmailThread } from "../providers/gmailProvider";
 import type { MailFolder, ProviderMutation } from "../providers/types";
@@ -23,6 +25,7 @@ type MessageRow = {
   is_archived: number;
   is_deleted: number;
   has_attachments: number;
+  raw_r2_key: string | null;
   in_reply_to: string | null;
   reference_ids: string | null;
   delivery_status: string | null;
@@ -33,6 +36,8 @@ type AttachmentRow = { id: string; message_id: string; filename: string; content
 
 const folders = new Set<Folder>(["inbox", "starred", "sent", "drafts", "archive", "trash"]);
 const INLINE_DOWNLOAD_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+const MAX_RECOVERED_HTML = 2 * 1024 * 1024;
+const encoder = new TextEncoder();
 const folderFrom = (value: string | null): Folder => value && folders.has(value as Folder) ? value as Folder : "inbox";
 
 function parseArray(value: string): string[] {
@@ -45,6 +50,32 @@ function parseArray(value: string): string[] {
 }
 
 const preview = (value: string) => value.replace(/\s+/g, " ").trim().slice(0, 240);
+
+function truncateUtf8(value: string, maxBytes: number): string {
+  if (encoder.encode(value).byteLength <= maxBytes) return value;
+  let low = 0, high = value.length;
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    if (encoder.encode(value.slice(0, mid)).byteLength <= maxBytes) low = mid;
+    else high = mid - 1;
+  }
+  return value.slice(0, low);
+}
+
+async function recoverStoredHtml(env: Env, row: MessageRow): Promise<MessageRow> {
+  if (row.body_html !== null || row.direction !== "inbound" || !row.raw_r2_key) return row;
+  try {
+    const object = await env.MAIL.get(row.raw_r2_key);
+    if (!object) return row;
+    const raw = await object.arrayBuffer();
+    const parsed = await new PostalMime({ maxNestingDepth: 30, maxHeadersSize: 256 * 1024 }).parse(raw);
+    const bodyHtml = parsed.html ? truncateUtf8(sanitizeEmailHtml(parsed.html), MAX_RECOVERED_HTML) : "";
+    await env.DB.prepare("UPDATE messages SET body_html=?2 WHERE id=?1 AND body_html IS NULL").bind(row.id, bodyHtml).run();
+    return { ...row, body_html: bodyHtml };
+  } catch {
+    return row;
+  }
+}
 
 function toListItem(row: MessageRow) {
   return {
@@ -142,6 +173,7 @@ function detailFrom(row: MessageRow, attachments: AttachmentRow[]) {
     ccAddresses: parseArray(row.cc_addresses),
     bccAddresses: parseArray(row.bcc_addresses),
     bodyText: row.body_text ?? row.preview,
+    bodyHtml: row.body_html || null,
     bodyHtmlAvailable: Boolean(row.body_html),
     inReplyTo: row.in_reply_to,
     references: row.reference_ids,
@@ -184,10 +216,11 @@ export async function getMessage(request: Request, id: string, env: Env): Promis
     }
   }
 
-  const row = await env.DB.prepare(`SELECT id,thread_id,direction,from_address,from_name,to_addresses,cc_addresses,bcc_addresses,subject,preview,body_text,body_html,received_at,sent_at,is_read,is_starred,is_archived,is_deleted,has_attachments,in_reply_to,reference_ids,delivery_status,delivery_error FROM messages WHERE id=?1`)
+  const initialRow = await env.DB.prepare(`SELECT id,thread_id,direction,from_address,from_name,to_addresses,cc_addresses,bcc_addresses,subject,preview,body_text,body_html,received_at,sent_at,is_read,is_starred,is_archived,is_deleted,has_attachments,raw_r2_key,in_reply_to,reference_ids,delivery_status,delivery_error FROM messages WHERE id=?1`)
     .bind(id)
     .first<MessageRow>();
-  if (!row) return Response.json({ error: "Message not found" }, { status: 404 });
+  if (!initialRow) return Response.json({ error: "Message not found" }, { status: 404 });
+  const row = await recoverStoredHtml(env, initialRow);
 
   const unread = await env.DB.prepare("SELECT COUNT(*) AS count FROM messages WHERE thread_id=?1 AND direction='inbound' AND is_read=0")
     .bind(row.thread_id)
@@ -200,7 +233,7 @@ export async function getMessage(request: Request, id: string, env: Env): Promis
     ]);
   }
 
-  const threadRows = await env.DB.prepare(`SELECT id,thread_id,direction,from_address,from_name,to_addresses,cc_addresses,bcc_addresses,subject,preview,body_text,body_html,received_at,sent_at,is_read,is_starred,is_archived,is_deleted,has_attachments,in_reply_to,reference_ids,delivery_status,delivery_error FROM messages WHERE thread_id=?1 ORDER BY COALESCE(sent_at,received_at) ASC LIMIT 100`)
+  const threadRows = await env.DB.prepare(`SELECT id,thread_id,direction,from_address,from_name,to_addresses,cc_addresses,bcc_addresses,subject,preview,body_text,body_html,received_at,sent_at,is_read,is_starred,is_archived,is_deleted,has_attachments,raw_r2_key,in_reply_to,reference_ids,delivery_status,delivery_error FROM messages WHERE thread_id=?1 ORDER BY COALESCE(sent_at,received_at) ASC LIMIT 100`)
     .bind(row.thread_id)
     .all<MessageRow>();
   const ids = threadRows.results.map((entry) => entry.id);
