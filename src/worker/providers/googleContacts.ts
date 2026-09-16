@@ -1,4 +1,5 @@
 import { getGoogleAccessToken } from "./googleCredentials";
+import { isAllowedGoogleImageUrl } from "./googleImages";
 
 const PEOPLE_API = "https://people.googleapis.com/v1";
 const MAX_PAGES = 10;
@@ -18,9 +19,7 @@ function safeGooglePhotoUrl(raw: string | undefined): string | null {
   if (!raw) return null;
   try {
     const url = new URL(raw);
-    const allowedHost = url.hostname === "lh3.googleusercontent.com"
-      || url.hostname.endsWith(".googleusercontent.com");
-    return url.protocol === "https:" && allowedHost ? url.toString() : null;
+    return isAllowedGoogleImageUrl(url) ? url.toString() : null;
   } catch {
     return null;
   }
