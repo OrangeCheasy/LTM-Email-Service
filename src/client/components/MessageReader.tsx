@@ -102,6 +102,7 @@ export function MessageReader({ message, thread, loading = false, onBack, onRepl
           ) : (
             <button className="mobile-reader-action" type="button" onClick={() => onPatch({ isDeleted: false }, true)} aria-label="Restore message"><Icon name="inbox" size={17}/><span>Restore</span></button>
           )}
+          <button className="mobile-reader-action" type="button" onClick={onReply} aria-label="Reply to message"><Icon name="reply" size={17}/><span>Reply</span></button>
         </div>
       </header>
 
