@@ -5,18 +5,11 @@ interface AuthStatus {
   configured: boolean;
   authenticated: boolean;
   setupAvailable: boolean;
-  smsSecondFactorConfigured?: boolean;
 }
 
 interface OptionsEnvelope<T> {
   challengeId: string;
   options: T;
-}
-
-interface LoginResult {
-  ok: true;
-  smsRequired?: boolean;
-  challengeId?: string;
 }
 
 async function apiJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -44,8 +37,6 @@ function friendlyAuthError(error: unknown): string {
 export function AuthGate({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus | null>(null);
   const [setupToken, setSetupToken] = useState("");
-  const [smsChallengeId, setSmsChallengeId] = useState("");
-  const [smsCode, setSmsCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -66,45 +57,16 @@ export function AuthGate({ children }: { children: ReactNode }) {
   async function signIn() {
     setBusy(true);
     setError("");
-    setSmsChallengeId("");
-    setSmsCode("");
     try {
       const envelope = await apiJson<OptionsEnvelope<Parameters<typeof startAuthentication>[0]["optionsJSON"]>>(
         "/api/auth/login/options",
         { method: "POST", body: "{}" },
       );
       const response = await startAuthentication({ optionsJSON: envelope.options });
-      const result = await apiJson<LoginResult>("/api/auth/login/verify", {
+      await apiJson<{ ok: true }>("/api/auth/login/verify", {
         method: "POST",
         body: JSON.stringify({ challengeId: envelope.challengeId, response }),
       });
-      if (result.smsRequired) {
-        if (!result.challengeId) throw new Error("The server did not return a verification challenge.");
-        setSmsChallengeId(result.challengeId);
-        return;
-      }
-      await refresh();
-    } catch (caught) {
-      setError(friendlyAuthError(caught));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function verifySms() {
-    if (!smsChallengeId || !/^\d{4,10}$/.test(smsCode.trim())) {
-      setError("Enter the verification code from the text message.");
-      return;
-    }
-    setBusy(true);
-    setError("");
-    try {
-      await apiJson<{ ok: true }>("/api/auth/sms/verify", {
-        method: "POST",
-        body: JSON.stringify({ challengeId: smsChallengeId, code: smsCode.trim() }),
-      });
-      setSmsChallengeId("");
-      setSmsCode("");
       await refresh();
     } catch (caught) {
       setError(friendlyAuthError(caught));
@@ -157,30 +119,6 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
         {!status ? (
           <div className="auth-state">Checking session…</div>
-        ) : smsChallengeId ? (
-          <div className="auth-setup">
-            <label htmlFor="sms-code">Verification code</label>
-            <input
-              id="sms-code"
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              pattern="[0-9]*"
-              maxLength={10}
-              value={smsCode}
-              onChange={(event) => setSmsCode(event.target.value.replace(/\D/g, ""))}
-              placeholder="Enter SMS code"
-              disabled={busy}
-              autoFocus
-            />
-            <button className="auth-primary" type="button" onClick={() => void verifySms()} disabled={busy}>
-              {busy ? "Verifying…" : "Verify code"}
-            </button>
-            <button className="auth-secondary" type="button" onClick={() => { setSmsChallengeId(""); setSmsCode(""); setError(""); }} disabled={busy}>
-              Use passkey again
-            </button>
-            <p className="auth-note">This browser is new to LTM Mails. The server sent a one-time code to the private phone number configured in backend secrets.</p>
-          </div>
         ) : status.configured ? (
           <button className="auth-primary" type="button" onClick={() => void signIn()} disabled={busy}>
             {busy ? "Signing in…" : "Sign in with passkey"}
