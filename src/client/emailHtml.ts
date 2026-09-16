@@ -70,6 +70,8 @@ export function buildSafeEmailDocument(html: string): string {
     a { cursor: pointer; }
   `;
 
-  document.head.prepend(csp, viewport, safetyStyles);
+  document.head.prepend(safetyStyles);
+  document.head.prepend(viewport);
+  document.head.prepend(csp);
   return `<!doctype html>${document.documentElement.outerHTML}`;
 }
