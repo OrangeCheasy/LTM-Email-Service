@@ -18,7 +18,7 @@
 
 /favicon.ico
   Cache-Control: no-store, max-age=0
-  Content-Type: image/png
+  Content-Type: image/x-icon
 
 /apple-touch-icon.png
   Cache-Control: no-cache
