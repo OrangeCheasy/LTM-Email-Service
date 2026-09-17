@@ -17,7 +17,7 @@
     {
       "binding": "DB",
       "database_name": "ltm-email-service",
-      "database_id": "df322b9b-51de-410f-a08b-8027a0e25b79",
+      "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "./migrations"
     }
   ],
