@@ -60,8 +60,10 @@ The current security model includes:
 - provider OAuth credentials encrypted at rest
 - outbound native sending restricted to the configured mailbox
 - production credentials and cryptographic secrets supplied through protected runtime/CI secret stores rather than committed source
+- production D1 identifiers resolved from Cloudflare only during authenticated deployment instead of being stored in the repository
+- automated Gitleaks scanning across fetched branch/tag history on pull requests and the current major development branch
 
-No production mailbox contents, OAuth tokens, passkeys, session tokens, private cryptographic keys, or API credentials are intended to be committed to this repository.
+No production mailbox contents, OAuth tokens, passkeys, session tokens, private cryptographic keys, API credentials, or production database identifiers are intended to be committed to this repository.
 
 ## Repository structure
 
@@ -74,15 +76,17 @@ src/worker/email/           inbound/outbound email processing
 src/worker/providers/       native/Gmail provider abstraction and OAuth helpers
 migrations/                 D1 schema migrations
 public/                     PWA/static assets
-scripts/                    build/asset helper scripts
-.github/workflows/          validation and controlled production deployment
+scripts/                    build/asset and deployment helper scripts
+.github/workflows/          validation, security scanning, and production deployment
 ```
 
 ## Development and deployment
 
 This repository reflects the source for a private production service. Runtime infrastructure, account configuration, credentials, and production-only values are managed separately from source control.
 
-Development validation includes dependency installation, generated-asset validation, TypeScript checks, and a production build. Production deployment is intentionally isolated from ordinary development branches.
+Development validation includes dependency installation, generated-asset validation, TypeScript checks, a production build, and a full-history secret scan. The secret scan fetches repository branches/tags before scanning so stale refs are included rather than checking only the current working branch.
+
+Production deployment is intentionally isolated from ordinary development branches. Before migrations or deployment, the workflow authenticates to Cloudflare and resolves the configured D1 database by name, hydrating the local deployment config only inside the ephemeral CI workspace.
 
 ## Security reports
 
