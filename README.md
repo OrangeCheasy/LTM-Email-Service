@@ -60,7 +60,7 @@ The current security model includes:
 - provider OAuth credentials encrypted at rest
 - outbound native sending restricted to the configured mailbox
 - production credentials and cryptographic secrets supplied through protected runtime/CI secret stores rather than committed source
-- production D1 identifiers resolved from Cloudflare only during authenticated deployment instead of being stored in the repository
+- production D1 identifiers resolved from the currently deployed Worker binding during authenticated deployment instead of being stored in the repository
 - automated Gitleaks scanning across fetched branch/tag history on pull requests and major branches
 - automated historical path auditing for accidentally committed environment files, mailbox exports, local databases, private-key files, and backup artifacts
 
@@ -87,7 +87,7 @@ This repository reflects the source for a private production service. Runtime in
 
 Development validation includes dependency installation, generated-asset validation, TypeScript checks, a production build, and a full-history security audit. The security audit fetches repository branches/tags before scanning so stale refs are included rather than checking only the current working branch. It checks both secret patterns and sensitive historical artifact paths such as environment files, mailbox exports, local databases, key files, and backups.
 
-Production deployment is intentionally isolated from ordinary development branches. Before migrations or deployment, the workflow authenticates to Cloudflare and resolves the configured D1 database by name, hydrating the local deployment config only inside the ephemeral CI workspace.
+Production deployment is intentionally isolated from ordinary development branches. Before migrations or deployment, the workflow authenticates to Cloudflare, reads the currently deployed Worker's D1 binding, and hydrates the local deployment config only inside the ephemeral CI workspace.
 
 ## Security reports
 
