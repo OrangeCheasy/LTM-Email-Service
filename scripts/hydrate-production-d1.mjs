@@ -1,5 +1,8 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { readFile, writeFile } from "node:fs/promises";
 
+const execFileAsync = promisify(execFile);
 const CONFIG_PATH = new URL("../wrangler.jsonc", import.meta.url);
 const PLACEHOLDER_DATABASE_ID = "00000000-0000-0000-0000-000000000000";
 
@@ -22,29 +25,34 @@ if (!config.includes(`"database_id": "${PLACEHOLDER_DATABASE_ID}"`)) {
 }
 
 const databaseName = databaseNameMatch[1];
-const endpoint = new URL(
-  `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/d1/database`,
-);
-endpoint.searchParams.set("name", databaseName);
-endpoint.searchParams.set("per_page", "10");
 
-const response = await fetch(endpoint, {
-  headers: {
-    Authorization: `Bearer ${apiToken}`,
-    Accept: "application/json",
-  },
-});
+let databases;
+try {
+  const { stdout } = await execFileAsync(
+    "npx",
+    ["--no-install", "wrangler", "d1", "list", "--json"],
+    {
+      env: {
+        ...process.env,
+        CI: "true",
+        NO_COLOR: "1",
+      },
+      maxBuffer: 1024 * 1024,
+    },
+  );
 
-if (!response.ok) {
-  throw new Error(`Cloudflare D1 lookup failed with HTTP ${response.status}.`);
+  databases = JSON.parse(stdout);
+} catch {
+  throw new Error(
+    "Wrangler could not list production D1 databases. Verify the deployment token has D1 access and the configured Cloudflare account is correct.",
+  );
 }
 
-const payload = await response.json();
-if (!payload?.success || !Array.isArray(payload.result)) {
-  throw new Error("Cloudflare D1 lookup returned an unexpected response.");
+if (!Array.isArray(databases)) {
+  throw new Error("Wrangler D1 lookup returned an unexpected response.");
 }
 
-const matches = payload.result.filter(
+const matches = databases.filter(
   (database) => database?.name === databaseName && typeof database?.uuid === "string",
 );
 
@@ -63,4 +71,4 @@ if (hydrated === config) {
 }
 
 await writeFile(CONFIG_PATH, hydrated, "utf8");
-console.log("Resolved production D1 binding from Cloudflare without exposing its identifier in source control.");
+console.log("Resolved production D1 binding through Wrangler without exposing its identifier in source control.");
