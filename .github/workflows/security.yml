@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   secret-scan:
-    name: Full-history secret scan
+    name: Full-history security scan
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -34,6 +34,28 @@ jobs:
           git fetch --force --prune origin '+refs/heads/*:refs/remotes/origin/*'
           git fetch --force --tags origin
           echo "Fetched $(git for-each-ref --format='%(refname)' refs/remotes/origin refs/tags | wc -l | tr -d ' ') refs for scanning."
+
+      - name: Audit history for sensitive artifact paths
+        id: path_audit
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git rev-list --objects --all \
+            | awk 'NF > 1 { $1=""; sub(/^ /, ""); print }' \
+            | sort -u \
+            > history-paths.txt
+
+          grep -E -i '(^|/)(\.dev\.vars|\.env($|\.)|id_rsa$|id_ed25519$)|\.(pem|key|p12|pfx|sqlite|sqlite3|db|eml|mbox|bak)$' \
+            history-paths.txt \
+            | grep -E -v '(^|/)\.env(\.[^/]*)?\.example$|(^|/)\.env\.example$' \
+            > sensitive-history-paths.txt || true
+
+          if [[ -s sensitive-history-paths.txt ]]; then
+            echo "Potentially sensitive historical artifact paths were detected." >&2
+            exit 1
+          fi
 
       - name: Scan all refs with Gitleaks
         id: gitleaks
@@ -62,12 +84,18 @@ jobs:
             : > gitleaks-findings.tsv
           fi
 
+          if [[ ! -f sensitive-history-paths.txt ]]; then
+            : > sensitive-history-paths.txt
+          fi
+
       - name: Upload sanitized findings
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: gitleaks-sanitized-findings
-          path: gitleaks-findings.tsv
+          name: security-sanitized-findings
+          path: |
+            gitleaks-findings.tsv
+            sensitive-history-paths.txt
           if-no-files-found: error
           retention-days: 7
 
@@ -75,37 +103,55 @@ jobs:
         if: always()
         shell: bash
         env:
+          PATH_AUDIT_OUTCOME: ${{ steps.path_audit.outcome }}
           SCAN_OUTCOME: ${{ steps.gitleaks.outcome }}
         run: |
           set -euo pipefail
+          failed=0
+
+          {
+            echo "## Full-history security scan"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ -s sensitive-history-paths.txt ]]; then
+            path_count="$(wc -l < sensitive-history-paths.txt | tr -d ' ')"
+            {
+              echo "Detected **${path_count}** potentially sensitive historical artifact path(s):"
+              echo
+              while IFS= read -r path; do
+                echo "- \`${path}\`"
+              done < sensitive-history-paths.txt
+              echo
+            } >> "$GITHUB_STEP_SUMMARY"
+            failed=1
+          elif [[ "$PATH_AUDIT_OUTCOME" != "success" ]]; then
+            echo "The historical artifact-path audit failed without producing findings. Treating this as a scan failure." >> "$GITHUB_STEP_SUMMARY"
+            echo >> "$GITHUB_STEP_SUMMARY"
+            failed=1
+          else
+            echo "No sensitive mailbox/database/key artifact paths were detected across fetched history." >> "$GITHUB_STEP_SUMMARY"
+            echo >> "$GITHUB_STEP_SUMMARY"
+          fi
 
           if [[ -s gitleaks-findings.tsv ]]; then
             finding_count="$(wc -l < gitleaks-findings.tsv | tr -d ' ')"
             {
-              echo "## Full-history secret scan"
-              echo
               echo "Gitleaks detected **${finding_count}** potential secret finding(s). Secret values are not included."
               echo
               while IFS=$'\t' read -r rule file line commit; do
                 echo "- \`${rule}\` in \`${file}:${line}\` at commit \`${commit:0:12}\`"
               done < gitleaks-findings.tsv
             } >> "$GITHUB_STEP_SUMMARY"
-            echo "Potential secrets were detected in repository history." >&2
-            exit 1
+            failed=1
+          elif [[ "$SCAN_OUTCOME" != "success" ]]; then
+            echo "Gitleaks failed without producing findings. Treating this as a scan failure." >> "$GITHUB_STEP_SUMMARY"
+            failed=1
+          else
+            echo "No potential secrets were detected across the fetched branch/tag history." >> "$GITHUB_STEP_SUMMARY"
           fi
 
-          if [[ "$SCAN_OUTCOME" != "success" ]]; then
-            {
-              echo "## Full-history secret scan"
-              echo
-              echo "The scanner did not complete successfully and produced no findings report. Treating this as a failure rather than a clean scan."
-            } >> "$GITHUB_STEP_SUMMARY"
-            echo "Gitleaks failed without producing a report." >&2
+          if [[ "$failed" -ne 0 ]]; then
+            echo "Repository history security audit failed." >&2
             exit 1
           fi
-
-          {
-            echo "## Full-history secret scan"
-            echo
-            echo "No potential secrets were detected across the fetched branch/tag history."
-          } >> "$GITHUB_STEP_SUMMARY"
