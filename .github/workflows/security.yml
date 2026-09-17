@@ -50,6 +50,27 @@ jobs:
             --report-format=json \
             --report-path=/repo/gitleaks-report.json
 
+      - name: Create sanitized findings report
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -s gitleaks-report.json ]]; then
+            jq -r '.[] | [(.RuleID // "unknown"), (.File // "unknown"), ((.StartLine // 0) | tostring), ((.Commit // "unknown")[0:40])] | @tsv' \
+              gitleaks-report.json > gitleaks-findings.tsv
+          else
+            : > gitleaks-findings.tsv
+          fi
+
+      - name: Upload sanitized findings
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: gitleaks-sanitized-findings
+          path: gitleaks-findings.tsv
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Publish sanitized scan result
         if: always()
         shell: bash
@@ -58,14 +79,16 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [[ -s gitleaks-report.json ]]; then
-            finding_count="$(jq 'length' gitleaks-report.json)"
+          if [[ -s gitleaks-findings.tsv ]]; then
+            finding_count="$(wc -l < gitleaks-findings.tsv | tr -d ' ')"
             {
               echo "## Full-history secret scan"
               echo
-              echo "Gitleaks detected **${finding_count}** potential secret finding(s). Values are redacted."
+              echo "Gitleaks detected **${finding_count}** potential secret finding(s). Secret values are not included."
               echo
-              jq -r '.[] | "- `" + (.RuleID // "unknown") + "` in `" + (.File // "unknown") + "` at commit `" + ((.Commit // "unknown")[0:12]) + "`"' gitleaks-report.json
+              while IFS=$'\t' read -r rule file line commit; do
+                echo "- \`${rule}\` in \`${file}:${line}\` at commit \`${commit:0:12}\`"
+              done < gitleaks-findings.tsv
             } >> "$GITHUB_STEP_SUMMARY"
             echo "Potential secrets were detected in repository history." >&2
             exit 1
