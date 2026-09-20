@@ -1,4 +1,4 @@
-import { TouchEvent, useMemo, useRef, useState } from "react";
+import { TouchEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { Folder, MessageListItem, NotificationState } from "../mailTypes";
 import { formatDate, notificationLabel, senderLabel } from "../mailUtils";
 import { Icon } from "./Icon";
@@ -25,6 +25,19 @@ type ListFilter = "all" | "unread" | "starred";
 const PULL_TRIGGER_PX = 64;
 const MAX_PULL_PX = 86;
 
+function updatedLabel(updatedAt: number | null, now: number): string {
+  if (updatedAt === null) return "Updating…";
+  const seconds = Math.max(0, Math.floor((now - updatedAt) / 1000));
+  if (seconds < 5) return "Last updated just now";
+  if (seconds < 60) return `Last updated ${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `Last updated ${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `Last updated ${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `Last updated ${days}d ago`;
+}
+
 export function MailList({
   folder,
   folderLabel,
@@ -43,9 +56,24 @@ export function MailList({
   const [listFilter, setListFilter] = useState<ListFilter>("all");
   const [pullDistance, setPullDistance] = useState(0);
   const [pullRefreshing, setPullRefreshing] = useState(false);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
+  const [clock, setClock] = useState(() => Date.now());
   const scrollRef = useRef<HTMLDivElement>(null);
   const touchStartY = useRef<number | null>(null);
   const filtersEnabled = folder !== "drafts";
+
+  useEffect(() => {
+    if (!loading) {
+      const now = Date.now();
+      setLastUpdatedAt(now);
+      setClock(now);
+    }
+  }, [messages, loading]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const threadedMessages = useMemo(() => {
     if (folder === "drafts") return messages;
@@ -108,7 +136,7 @@ export function MailList({
   return <section className="mail-list-pane">
     <TopBar search={search} notificationState={notificationState} notificationsDisabled={notificationsDisabled} onSearchChange={onSearchChange} onSearch={onRefresh} onToggleNotifications={onToggleNotifications}/>
     <header className="mail-list-header">
-      <div><div className="eyebrow">{folder === "inbox" && unreadCount > 0 ? `${unreadCount} unread` : "Mailbox"}</div><h1>{folderLabel}</h1></div>
+      <div><div className="eyebrow">{folder === "inbox" && unreadCount > 0 ? `${unreadCount} unread` : "Mailbox"}</div><h1>{folderLabel}</h1><div className="mail-last-updated" aria-live="polite">{updatedLabel(lastUpdatedAt, clock)}</div></div>
       <div className="mail-list-header-actions">
         <button className={`icon-button mobile-notification-button notification-${notificationState}`} type="button" aria-label={notificationLabel(notificationState)} title={notificationLabel(notificationState)} disabled={notificationsDisabled} onClick={onToggleNotifications}><Icon name="bell" size={17}/>{notificationState === "on" ? <i className="mobile-notification-status" aria-hidden="true"/> : null}</button>
         <button className="icon-button" type="button" aria-label="Refresh mailbox" onClick={onRefresh}><Icon name="refresh" size={17}/></button>
