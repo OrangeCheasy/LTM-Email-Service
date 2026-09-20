@@ -9,7 +9,7 @@ import type {
 import { formatFullDate } from "./mailUtils";
 
 export const NATIVE_ACCOUNT_ID = "native:primary";
-export const AUTO_REFRESH_MS = 15_000;
+export const AUTO_REFRESH_MS = 5_000;
 export const DETAIL_CACHE_MS = 5 * 60_000;
 
 const DRAFT_SENDER_KEY_PREFIX = "ltm-draft-sender:";
