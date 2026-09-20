@@ -9,7 +9,11 @@ import type {
 import { formatFullDate } from "./mailUtils";
 
 export const NATIVE_ACCOUNT_ID = "native:primary";
-export const AUTO_REFRESH_MS = 5_000;
+// Periodic polling is intentionally disabled in normal sessions. Inbox state is
+// synchronized by worker-driven updates, mailbox actions, focus, and explicit
+// pull/manual refresh. Keep the legacy timer effectively dormant until its
+// call site is removed in the next client cleanup.
+export const AUTO_REFRESH_MS = 2_147_483_647;
 export const DETAIL_CACHE_MS = 5 * 60_000;
 
 const DRAFT_SENDER_KEY_PREFIX = "ltm-draft-sender:";
