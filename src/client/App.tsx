@@ -1,5 +1,4 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { startRegistration } from "@simplewebauthn/browser";
 import {
   AUTO_REFRESH_MS,
   DETAIL_CACHE_MS,
@@ -19,6 +18,7 @@ import { MailList } from "./components/MailList";
 import { MessageReader } from "./components/MessageReader";
 import { MobileNav } from "./components/MobileNav";
 import { ProfileModal } from "./components/ProfileModal";
+import { SessionListModal, type SessionInfo } from "./components/SessionListModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { Sidebar } from "./components/Sidebar";
 import type {
@@ -59,6 +59,8 @@ export function App() {
   const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null);
   const [settingsBusy, setSettingsBusy] = useState<string | null>(null);
   const [sessionCount, setSessionCount] = useState<number | null>(null);
+  const [sessions, setSessions] = useState<SessionInfo[] | null>(null);
+  const [sessionsOpen, setSessionsOpen] = useState(false);
 
   const persistedDraftIds = useRef(new Set<string>());
   const detailCache = useRef(new Map<string, DetailCacheEntry>());
@@ -92,18 +94,18 @@ export function App() {
       .catch(() => undefined);
   }, [refreshAccounts]);
 
+  const refreshSessions = useCallback(async () => {
+    const response = await fetch("/api/auth/sessions", { cache: "no-store" });
+    if (!response.ok) return;
+
+    const next = await response.json() as { sessions: SessionInfo[] };
+    setSessions(next.sessions);
+    setSessionCount(next.sessions.length);
+  }, []);
+
   useEffect(() => {
-    if (!settingsOpen) return;
-    fetch("/api/auth/sessions", { cache: "no-store" })
-      .then(async (response) => {
-        if (response.ok) {
-          setSessionCount(
-            (await response.json() as { sessions: unknown[] }).sessions.length,
-          );
-        }
-      })
-      .catch(() => undefined);
-  }, [settingsOpen]);
+    if (settingsOpen) void refreshSessions();
+  }, [settingsOpen, refreshSessions]);
 
   useEffect(() => {
     let cancelled = false;
@@ -351,36 +353,6 @@ export function App() {
     }
   };
 
-  const addPasskey = async () => {
-    setSettingsBusy("passkey");
-    try {
-      const optionsResponse = await fetch("/api/auth/register/options", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: "{}",
-      });
-      const data = await optionsResponse.json() as {
-        challengeId?: string;
-        options?: Parameters<typeof startRegistration>[0]["optionsJSON"];
-      };
-      if (!optionsResponse.ok || !data.challengeId || !data.options) {
-        throw new Error();
-      }
-
-      const response = await startRegistration({ optionsJSON: data.options });
-      const verifyResponse = await fetch("/api/auth/register/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ challengeId: data.challengeId, response }),
-      });
-      if (!verifyResponse.ok) throw new Error();
-    } catch {
-      setError("Could not add passkey");
-    } finally {
-      setSettingsBusy(null);
-    }
-  };
-
   const resetSessions = async () => {
     if (!confirm("Sign out every other browser and device? This device stays signed in.")) {
       return;
@@ -389,6 +361,7 @@ export function App() {
     try {
       const response = await fetch("/api/auth/sessions/reset", { method: "POST" });
       if (!response.ok) throw new Error();
+      setSessions((current) => current ? current.filter((session) => session.current) : current);
       setSessionCount(1);
     } catch {
       setError("Could not reset sessions");
@@ -787,9 +760,19 @@ export function App() {
           setSettingsOpen(false);
           setProfileOpen(true);
         }}
-        onAddPasskey={() => void addPasskey()}
+        onViewSessions={() => {
+          setSessionsOpen(true);
+          void refreshSessions();
+        }}
         onResetSessions={() => void resetSessions()}
         onLogout={() => void logout()}
+      />
+      <SessionListModal
+        open={sessionsOpen}
+        sessions={sessions}
+        busy={settingsBusy !== null}
+        onClose={() => setSessionsOpen(false)}
+        onResetSessions={() => void resetSessions()}
       />
       <ProfileModal
         open={profileOpen}
