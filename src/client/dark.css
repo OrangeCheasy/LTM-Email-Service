@@ -137,3 +137,104 @@ a:focus-visible { outline-color: rgba(182, 162, 201, .8); }
   .mobile-compose-fab { background: #b6a2c9; color: #202531; box-shadow: 0 10px 30px rgba(8,9,14,.42); }
   .compose-modal { box-shadow: 0 -10px 50px rgba(8,9,14,.48); }
 }
+
+/* ---- active-session-dark-theme.css ---- */
+.sessions-backdrop {
+  background: rgba(8, 9, 14, .72);
+}
+
+.sessions-modal {
+  border-color: #4a4258;
+  background: #202531;
+  box-shadow: var(--shadow);
+}
+
+.sessions-header {
+  border-bottom-color: #494255;
+  background: #202531;
+}
+
+.sessions-header span {
+  color: #b6a2c9;
+}
+
+.sessions-header h2 {
+  color: #f3eff4;
+}
+
+.sessions-close {
+  background: #322f42;
+  color: #d8d1dc;
+}
+
+.sessions-description {
+  color: #b0aab3;
+}
+
+.sessions-list {
+  background: #202531;
+}
+
+.sessions-state {
+  color: #b0aab3;
+}
+
+.session-card {
+  border-color: #494255;
+  background: #2a2b39;
+}
+
+.session-card-heading strong {
+  color: #e8e2ea;
+}
+
+.session-card-heading small {
+  color: #b0aab3;
+}
+
+.session-current {
+  background: #4b396f;
+  color: #eee7f4;
+}
+
+.session-details dt {
+  color: #918b99;
+}
+
+.session-details dd {
+  color: #ddd7df;
+}
+
+.sessions-actions {
+  border-top-color: #494255;
+  background: #2d2b3b;
+}
+
+.sessions-actions button {
+  border-color: #5a506a;
+  background: #3a354b;
+  color: #d3ccd7;
+}
+
+.sessions-actions button:hover:not(:disabled) {
+  border-color: #7f6a98;
+  color: #f3eff4;
+  background: #322f42;
+}
+
+.sessions-actions .sessions-danger {
+  border-color: #70434d;
+  background: #3b252e;
+  color: #efadb6;
+}
+
+.session-remove {
+  border-color: #70434d;
+  background: #3b252e;
+  color: #efadb6;
+}
+
+.session-remove:hover:not(:disabled) {
+  border-color: #a2606b;
+  background: #4a2d37;
+}
