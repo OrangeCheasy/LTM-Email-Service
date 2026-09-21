@@ -35,6 +35,7 @@ type SessionRow = {
   created_at: string;
   last_seen_at: string;
   expires_at: string;
+  user_agent: string | null;
 };
 
 const jsonError = (message: string, status: number) =>
@@ -102,12 +103,16 @@ async function cleanup(env: Env): Promise<void> {
   ]);
 }
 
-async function createSession(env: Env): Promise<string> {
+async function createSession(env: Env, request: Request): Promise<string> {
   const token = randomToken();
   await env.DB.prepare(
-    "INSERT INTO auth_sessions (token_hash, expires_at) VALUES (?, datetime('now', ?))",
+    "INSERT INTO auth_sessions (token_hash, expires_at, user_agent) VALUES (?, datetime('now', ?), ?)",
   )
-    .bind(await sha256Hex(token), `+${SESSION_TTL_SECONDS} seconds`)
+    .bind(
+      await sha256Hex(token),
+      `+${SESSION_TTL_SECONDS} seconds`,
+      request.headers.get("User-Agent")?.slice(0, 512) ?? null,
+    )
     .run();
 
   await env.DB.prepare(`
@@ -193,6 +198,10 @@ export async function authStatus(request: Request, env: Env): Promise<Response> 
 }
 
 export async function registrationOptions(request: Request, env: Env): Promise<Response> {
+  if (await hasCredential(env)) {
+    return jsonError("Passkey registration is disabled", 403);
+  }
+
   const body = await request.json<{ setupToken?: string }>().catch(() => null);
   if (!(await setupAuthorized(request, env, body?.setupToken))) {
     return jsonError(
@@ -239,6 +248,9 @@ export async function verifyRegistration(request: Request, env: Env): Promise<Re
   if (!body?.challengeId || !body.response) {
     return jsonError("Invalid registration payload", 400);
   }
+  if (await hasCredential(env)) {
+    return jsonError("Passkey registration is disabled", 403);
+  }
   if (!(await setupAuthorized(request, env, body.setupToken))) {
     return jsonError(
       (await hasCredential(env)) ? "Authentication required" : "Invalid setup token",
@@ -280,7 +292,7 @@ export async function verifyRegistration(request: Request, env: Env): Promise<Re
       )
       .run();
 
-    const token = await createSession(env);
+    const token = await createSession(env, request);
     return new Response(JSON.stringify({ ok: true }), {
       headers: {
         "Content-Type": "application/json",
@@ -360,7 +372,7 @@ export async function verifyAuthentication(request: Request, env: Env): Promise<
       .bind(verification.authenticationInfo.newCounter, stored.id)
       .run();
 
-    const token = await createSession(env);
+    const token = await createSession(env, request);
     return new Response(JSON.stringify({ ok: true }), {
       headers: {
         "Content-Type": "application/json",
@@ -393,7 +405,7 @@ export async function sessionInfo(request: Request, env: Env): Promise<Response>
   const token = cookie(request, SESSION_COOKIE);
   const current = token ? await sha256Hex(token) : null;
   const rows = await env.DB.prepare(`
-    SELECT token_hash, created_at, last_seen_at, expires_at
+    SELECT token_hash, created_at, last_seen_at, expires_at, user_agent
     FROM auth_sessions
     ORDER BY last_seen_at DESC, created_at DESC
   `).all<SessionRow>();
@@ -405,6 +417,7 @@ export async function sessionInfo(request: Request, env: Env): Promise<Response>
       createdAt: session.created_at,
       lastSeenAt: session.last_seen_at,
       expiresAt: session.expires_at,
+      userAgent: session.user_agent,
     })),
   });
 }
