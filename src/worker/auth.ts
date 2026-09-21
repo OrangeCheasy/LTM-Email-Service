@@ -31,6 +31,7 @@ type ChallengeRow = {
 };
 
 type SessionRow = {
+  session_id: string;
   token_hash: string;
   created_at: string;
   last_seen_at: string;
@@ -106,9 +107,10 @@ async function cleanup(env: Env): Promise<void> {
 async function createSession(env: Env, request: Request): Promise<string> {
   const token = randomToken();
   await env.DB.prepare(
-    "INSERT INTO auth_sessions (token_hash, expires_at, user_agent) VALUES (?, datetime('now', ?), ?)",
+    "INSERT INTO auth_sessions (session_id, token_hash, expires_at, user_agent) VALUES (?, ?, datetime('now', ?), ?)",
   )
     .bind(
+      crypto.randomUUID(),
       await sha256Hex(token),
       `+${SESSION_TTL_SECONDS} seconds`,
       request.headers.get("User-Agent")?.slice(0, 512) ?? null,
@@ -405,14 +407,14 @@ export async function sessionInfo(request: Request, env: Env): Promise<Response>
   const token = cookie(request, SESSION_COOKIE);
   const current = token ? await sha256Hex(token) : null;
   const rows = await env.DB.prepare(`
-    SELECT token_hash, created_at, last_seen_at, expires_at, user_agent
+    SELECT session_id, token_hash, created_at, last_seen_at, expires_at, user_agent
     FROM auth_sessions
     ORDER BY last_seen_at DESC, created_at DESC
   `).all<SessionRow>();
 
   return Response.json({
-    sessions: rows.results.map((session, index) => ({
-      id: index + 1,
+    sessions: rows.results.map((session) => ({
+      id: session.session_id,
       current: session.token_hash === current,
       createdAt: session.created_at,
       lastSeenAt: session.last_seen_at,
@@ -430,6 +432,28 @@ export async function resetSessions(request: Request, env: Env): Promise<Respons
   await env.DB.prepare("DELETE FROM auth_sessions WHERE token_hash != ?")
     .bind(current)
     .run();
+  return Response.json({ ok: true });
+}
+
+export async function revokeSession(
+  request: Request,
+  env: Env,
+  sessionId: string,
+): Promise<Response> {
+  const token = cookie(request, SESSION_COOKIE);
+  if (!token) return unauthorizedResponse();
+
+  const current = await sha256Hex(token);
+  const result = await env.DB.prepare(
+    "DELETE FROM auth_sessions WHERE session_id = ? AND token_hash != ?",
+  )
+    .bind(sessionId, current)
+    .run();
+
+  if (!result.meta.changes) {
+    return jsonError("Session not found or current session cannot be removed", 404);
+  }
+
   return Response.json({ ok: true });
 }
 

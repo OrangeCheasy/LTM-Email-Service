@@ -1,5 +1,5 @@
 export interface SessionInfo {
-  id: number;
+  id: string;
   current: boolean;
   createdAt: string;
   lastSeenAt: string;
@@ -13,6 +13,7 @@ type Props = {
   busy: boolean;
   onClose: () => void;
   onResetSessions: () => void;
+  onRemoveSession: (id: string) => void;
 };
 
 function formatDate(value: string): string {
@@ -89,7 +90,18 @@ export function SessionListModal(props: Props) {
                     <strong>{describeUserAgent(session.userAgent)}</strong>
                     <small>{session.current ? "Current device" : "Signed in"}</small>
                   </div>
-                  {session.current ? <span className="session-current">Current</span> : null}
+                  <div className="session-card-actions">
+                    {session.current ? <span className="session-current">Current</span> : (
+                      <button
+                        className="session-remove"
+                        type="button"
+                        disabled={props.busy}
+                        onClick={() => props.onRemoveSession(session.id)}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <dl className="session-details">
                   <div>

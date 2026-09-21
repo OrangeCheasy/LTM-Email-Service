@@ -13,6 +13,7 @@ import {
   logout,
   registrationOptions,
   resetSessions,
+  revokeSession,
   sessionInfo,
   unauthorizedResponse,
   verifyAuthentication,
@@ -103,6 +104,13 @@ async function routeApi(request: Request, env: Env, url: URL): Promise<Response>
   // Authenticated account and session management.
   if (url.pathname === "/api/auth/sessions" && request.method === "GET") return sessionInfo(request, env);
   if (url.pathname === "/api/auth/sessions/reset" && request.method === "POST") return resetSessions(request, env);
+
+  const sessionRoute = url.pathname.match(/^\/api\/auth\/sessions\/([^/]+)$/);
+  if (sessionRoute && request.method === "DELETE") {
+    const sessionId = decodedRouteId(sessionRoute);
+    if (!sessionId) return jsonError("Invalid session id", 400);
+    return revokeSession(request, env, sessionId);
+  }
   if (url.pathname === "/api/accounts/gmail/connect" && request.method === "POST") return startGoogleOAuth(env);
   if (url.pathname === "/api/contact-avatar" && request.method === "GET") return getContactAvatar(request, env);
 
