@@ -1,4 +1,4 @@
-import { TouchEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Folder, MessageListItem, NotificationState } from "../mailTypes";
 import { formatDate, notificationLabel, senderLabel } from "../mailUtils";
 import { Icon } from "./Icon";
@@ -60,7 +60,14 @@ export function MailList({
   const [clock, setClock] = useState(() => Date.now());
   const scrollRef = useRef<HTMLDivElement>(null);
   const touchStartY = useRef<number | null>(null);
+  const pullDistanceRef = useRef(0);
+  const pullRefreshingRef = useRef(false);
   const filtersEnabled = folder !== "drafts";
+
+  const setPullOffset = (distance: number) => {
+    pullDistanceRef.current = distance;
+    setPullDistance(distance);
+  };
 
   useEffect(() => {
     if (!loading) {
@@ -74,6 +81,81 @@ export function MailList({
     const timer = window.setInterval(() => setClock(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    const node = scrollRef.current;
+    if (!node) return;
+
+    const resetPull = () => {
+      touchStartY.current = null;
+      if (!pullRefreshingRef.current) setPullOffset(0);
+    };
+
+    const refreshFromPull = async () => {
+      if (pullRefreshingRef.current) return;
+      pullRefreshingRef.current = true;
+      setPullRefreshing(true);
+      setPullOffset(48);
+      try {
+        await onRefresh();
+      } finally {
+        pullRefreshingRef.current = false;
+        setPullRefreshing(false);
+        setPullOffset(0);
+      }
+    };
+
+    const handleTouchStart = (event: TouchEvent) => {
+      if (node.scrollTop <= 0 && !pullRefreshingRef.current) {
+        touchStartY.current = event.touches[0]?.clientY ?? null;
+      } else {
+        touchStartY.current = null;
+      }
+    };
+
+    const handleTouchMove = (event: TouchEvent) => {
+      if (touchStartY.current === null || pullRefreshingRef.current) return;
+      if (node.scrollTop > 0) {
+        resetPull();
+        return;
+      }
+
+      const currentY = event.touches[0]?.clientY ?? touchStartY.current;
+      const delta = currentY - touchStartY.current;
+      if (delta <= 0) {
+        setPullOffset(0);
+        return;
+      }
+
+      // iPadOS Safari/PWA can hand the gesture to native overscroll before
+      // React's synthetic touch handler sees enough movement. This listener is
+      // deliberately non-passive so the mailbox owns a downward pull at top.
+      if (event.cancelable) event.preventDefault();
+      setPullOffset(Math.min(MAX_PULL_PX, delta * 0.55));
+    };
+
+    const handleTouchEnd = () => {
+      const shouldRefresh = pullDistanceRef.current >= PULL_TRIGGER_PX;
+      touchStartY.current = null;
+      if (shouldRefresh && !pullRefreshingRef.current) {
+        void refreshFromPull();
+      } else if (!pullRefreshingRef.current) {
+        setPullOffset(0);
+      }
+    };
+
+    node.addEventListener("touchstart", handleTouchStart, { passive: true });
+    node.addEventListener("touchmove", handleTouchMove, { passive: false });
+    node.addEventListener("touchend", handleTouchEnd, { passive: true });
+    node.addEventListener("touchcancel", resetPull, { passive: true });
+
+    return () => {
+      node.removeEventListener("touchstart", handleTouchStart);
+      node.removeEventListener("touchmove", handleTouchMove);
+      node.removeEventListener("touchend", handleTouchEnd);
+      node.removeEventListener("touchcancel", resetPull);
+    };
+  }, [onRefresh]);
 
   const threadedMessages = useMemo(() => {
     if (folder === "drafts") return messages;
@@ -99,52 +181,18 @@ export function MailList({
     [filtersEnabled, listFilter, threadedMessages],
   );
 
-  const beginPull = (event: TouchEvent<HTMLDivElement>) => {
-    if ((scrollRef.current?.scrollTop ?? 0) <= 0 && !pullRefreshing) {
-      touchStartY.current = event.touches[0]?.clientY ?? null;
-    }
-  };
-
-  const updatePull = (event: TouchEvent<HTMLDivElement>) => {
-    if (touchStartY.current === null || pullRefreshing) return;
-    if ((scrollRef.current?.scrollTop ?? 0) > 0) {
-      touchStartY.current = null;
-      setPullDistance(0);
-      return;
-    }
-    const currentY = event.touches[0]?.clientY ?? touchStartY.current;
-    const delta = currentY - touchStartY.current;
-    setPullDistance(delta > 0 ? Math.min(MAX_PULL_PX, delta * 0.55) : 0);
-  };
-
-  const finishPull = async () => {
-    touchStartY.current = null;
-    if (pullDistance < PULL_TRIGGER_PX || pullRefreshing) {
-      setPullDistance(0);
-      return;
-    }
-    setPullRefreshing(true);
-    setPullDistance(48);
-    try {
-      await onRefresh();
-    } finally {
-      setPullRefreshing(false);
-      setPullDistance(0);
-    }
-  };
-
   return <section className="mail-list-pane">
     <TopBar search={search} notificationState={notificationState} notificationsDisabled={notificationsDisabled} onSearchChange={onSearchChange} onSearch={onRefresh} onToggleNotifications={onToggleNotifications}/>
     <header className="mail-list-header">
       <div><div className="eyebrow">{folder === "inbox" && unreadCount > 0 ? `${unreadCount} unread` : "Mailbox"}</div><h1>{folderLabel}</h1><div className="mail-last-updated" aria-live="polite">{updatedLabel(lastUpdatedAt, clock)}</div></div>
       <div className="mail-list-header-actions">
         <button className={`icon-button mobile-notification-button notification-${notificationState}`} type="button" aria-label={notificationLabel(notificationState)} title={notificationLabel(notificationState)} disabled={notificationsDisabled} onClick={onToggleNotifications}><Icon name="bell" size={17}/>{notificationState === "on" ? <i className="mobile-notification-status" aria-hidden="true"/> : null}</button>
-        <button className="icon-button" type="button" aria-label="Refresh mailbox" onClick={onRefresh}><Icon name="refresh" size={17}/></button>
+        <button className="icon-button" type="button" aria-label="Refresh mailbox" title="Refresh mailbox" onClick={() => void onRefresh()}><Icon name="refresh" size={17}/></button>
       </div>
     </header>
     <div className="search-wrap mail-list-search"><Icon name="search" size={17}/><input aria-label="Search mail" placeholder={folder === "drafts" ? "Search drafts…" : "Search emails, people, or keywords…"} value={search} onChange={(event) => onSearchChange(event.target.value)}/>{search ? <button type="button" aria-label="Clear search" onClick={() => onSearchChange("")}>×</button> : null}</div>
     {filtersEnabled ? <div className="mail-filter-tabs" role="tablist" aria-label="Message filters"><button type="button" className={listFilter === "all" ? "active" : ""} onClick={() => setListFilter("all")}>All</button><button type="button" className={listFilter === "unread" ? "active" : ""} onClick={() => setListFilter("unread")}>Unread</button><button type="button" className={listFilter === "starred" ? "active" : ""} onClick={() => setListFilter("starred")}>Starred</button></div> : <div className="draft-list-label">Autosaved drafts</div>}
-    <div ref={scrollRef} className="mail-list-scroll" aria-busy={loading || pullRefreshing} onTouchStart={beginPull} onTouchMove={updatePull} onTouchEnd={() => void finishPull()} onTouchCancel={() => { touchStartY.current = null; setPullDistance(0); }}>
+    <div ref={scrollRef} className="mail-list-scroll" aria-busy={loading || pullRefreshing}>
       <div aria-live="polite" style={{ height: pullDistance, opacity: pullDistance > 8 ? 1 : 0, display: "grid", placeItems: "center", overflow: "hidden", transition: touchStartY.current === null ? "height 160ms ease, opacity 160ms ease" : "none", color: "var(--muted)", fontSize: 11 }}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}><Icon name="refresh" size={15}/>{pullRefreshing ? "Refreshing…" : pullDistance >= PULL_TRIGGER_PX ? "Release to refresh" : "Pull to refresh"}</span>
       </div>
