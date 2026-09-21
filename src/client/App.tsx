@@ -353,6 +353,27 @@ export function App() {
     }
   };
 
+  const removeSession = async (sessionId: string) => {
+    if (!confirm("Sign out this browser session?")) return;
+
+    setSettingsBusy(`session:${sessionId}`);
+    try {
+      const response = await fetch(`/api/auth/sessions/${encodeURIComponent(sessionId)}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) throw new Error();
+
+      setSessions((current) => current
+        ? current.filter((session) => session.id !== sessionId)
+        : current);
+      setSessionCount((current) => current === null ? current : Math.max(0, current - 1));
+    } catch {
+      setError("Could not remove session");
+    } finally {
+      setSettingsBusy(null);
+    }
+  };
+
   const resetSessions = async () => {
     if (!confirm("Sign out every other browser and device? This device stays signed in.")) {
       return;
@@ -773,6 +794,7 @@ export function App() {
         busy={settingsBusy !== null}
         onClose={() => setSessionsOpen(false)}
         onResetSessions={() => void resetSessions()}
+        onRemoveSession={(id) => void removeSession(id)}
       />
       <ProfileModal
         open={profileOpen}

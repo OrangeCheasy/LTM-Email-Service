@@ -473,3 +473,39 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visib
     justify-content: flex-start;
   }
 }
+
+/* ---- per-session-revoke.css ---- */
+.session-card-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.session-remove {
+  min-height: 25px;
+  border: 1px solid #efc0c5;
+  border-radius: 7px;
+  padding: 0 8px;
+  background: #fff3f4;
+  color: var(--danger);
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.session-remove:hover:not(:disabled) {
+  border-color: #d9868f;
+  background: #ffe5e8;
+}
+
+.session-remove:disabled {
+  cursor: default;
+  opacity: .5;
+}
+
+@media (max-width: 560px) {
+  .session-card-actions {
+    align-items: flex-end;
+  }
+}
