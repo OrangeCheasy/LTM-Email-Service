@@ -344,7 +344,7 @@ body { background: radial-gradient(circle at 26% 2%, #201813 0, #0d0c0b 35%); co
 
 @media (max-width: 760px) {
   .mobile-nav {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(7, minmax(0, 1fr));
   }
 
   .mobile-nav button {
@@ -1407,6 +1407,10 @@ body { background: radial-gradient(circle at 26% 2%, #201813 0, #0d0c0b 35%); co
 
   .reader-actions button:nth-child(2) {
     display: none !important;
+  }
+
+  .reader-actions .junk-action {
+    display: grid !important;
   }
 
   .reader-actions .mobile-reader-action.destructive,

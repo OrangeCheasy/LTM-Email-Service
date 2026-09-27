@@ -113,8 +113,9 @@ function item(message: GmailMessage): ProviderMessage {
     sentAt: sent ? date : null,
     isRead: !labels.has("UNREAD"),
     isStarred: labels.has("STARRED"),
-    isArchived: !labels.has("INBOX") && !labels.has("SENT") && !labels.has("TRASH"),
+    isArchived: !labels.has("INBOX") && !labels.has("SENT") && !labels.has("TRASH") && !labels.has("SPAM"),
     isDeleted: labels.has("TRASH"),
+    isJunk: labels.has("SPAM"),
     hasAttachments: parts(message.payload).some((part) => Boolean(part.filename && part.body?.attachmentId)),
     deliveryStatus: null,
     isDraft: false,
@@ -262,6 +263,8 @@ async function messageBody(env: Env, accountId: string, message: GmailMessage) {
 
 const q = (folder: string) => folder === "inbox"
   ? "in:inbox"
+  : folder === "junk"
+    ? "in:spam"
   : folder === "starred"
     ? "is:starred"
     : folder === "sent"
@@ -391,7 +394,17 @@ export function gmailProvider(env: Env, accountId: string, email: string): MailP
       const remove: string[] = [];
       if (mutation.isRead !== undefined) (mutation.isRead ? remove : add).push("UNREAD");
       if (mutation.isStarred !== undefined) (mutation.isStarred ? add : remove).push("STARRED");
-      if (mutation.isArchived !== undefined) (mutation.isArchived ? remove : add).push("INBOX");
+      if (mutation.isJunk !== undefined) {
+        if (mutation.isJunk) {
+          add.push("SPAM");
+          remove.push("INBOX");
+        } else {
+          add.push("INBOX");
+          remove.push("SPAM");
+        }
+      } else if (mutation.isArchived !== undefined) {
+        (mutation.isArchived ? remove : add).push("INBOX");
+      }
       await call(env, accountId, `/messages/${encodeURIComponent(id)}/modify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

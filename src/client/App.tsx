@@ -729,6 +729,7 @@ export function App() {
         <MessageReader
           message={selected}
           thread={thread}
+          folderLabel={label}
           loading={Boolean(openingMessageId && !selected)}
           onBack={closeReader}
           onReply={startReply}
