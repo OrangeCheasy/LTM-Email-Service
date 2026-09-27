@@ -27,6 +27,7 @@ const NOTIFICATION_DISABLED_STATES = new Set<NotificationState>([
 
 export const FOLDERS: FolderDefinition[] = [
   { key: "inbox", label: "Inbox", icon: "inbox" },
+  { key: "junk", label: "Junk", icon: "junk" },
   { key: "starred", label: "Starred", icon: "star" },
   { key: "sent", label: "Sent", icon: "send" },
   { key: "drafts", label: "Drafts", icon: "draft" },
@@ -97,6 +98,8 @@ export function forwardedBody(message: MessageDetail): string {
 export function belongsInFolder(folder: Folder, message: MessageListItem): boolean {
   if (message.isDraft) return folder === "drafts";
   if (folder === "trash") return message.isDeleted;
+  if (folder === "junk") return message.isJunk && !message.isDeleted;
+  if (message.isJunk) return false;
   if (message.isDeleted) return false;
   if (folder === "starred") return message.isStarred;
   if (folder === "archive") return message.isArchived;

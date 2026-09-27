@@ -1,5 +1,5 @@
 export type MailProviderKind = "native" | "gmail";
-export type MailFolder = "inbox" | "starred" | "sent" | "archive" | "trash";
+export type MailFolder = "inbox" | "junk" | "starred" | "sent" | "archive" | "trash";
 
 export type ProviderMessage = {
   id: string;
@@ -17,6 +17,7 @@ export type ProviderMessage = {
   isStarred: boolean;
   isArchived: boolean;
   isDeleted: boolean;
+  isJunk: boolean;
   hasAttachments: boolean;
   deliveryStatus: string | null;
   isDraft: false;
@@ -33,6 +34,7 @@ export type ProviderMutation = Partial<{
   isStarred: boolean;
   isArchived: boolean;
   isDeleted: boolean;
+  isJunk: boolean;
 }>;
 
 export type ProviderAttachment = {

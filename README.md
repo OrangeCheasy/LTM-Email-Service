@@ -27,7 +27,7 @@ LTM Email Service is a full-stack webmail application built around a private mai
 
 The application currently includes:
 
-- inbox, starred, sent, drafts, archive, and trash folders
+- inbox, junk, starred, sent, drafts, archive, and trash folders; Junk displays messages Gmail currently labels as Spam for connected Gmail accounts
 - native mailbox plus connected Gmail accounts
 - account-aware compose/send
 - reply and forward flows with threading metadata

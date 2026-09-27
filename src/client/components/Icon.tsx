@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-type IconName = "mail" | "inbox" | "star" | "send" | "draft" | "archive" | "trash" | "search" | "compose" | "reply" | "forward" | "back" | "refresh" | "paperclip" | "bell" | "lock" | "more";
+type IconName = "mail" | "inbox" | "junk" | "star" | "send" | "draft" | "archive" | "trash" | "search" | "compose" | "reply" | "forward" | "back" | "refresh" | "paperclip" | "bell" | "lock" | "more";
 
 type IconProps = {
   name: IconName;
@@ -10,6 +10,7 @@ type IconProps = {
 const paths: Record<IconName, ReactNode> = {
   mail: <><rect x="3.75" y="6.25" width="16.5" height="11.5" rx="2.15"/><path d="M4.85 7.65 12 12.7l7.15-5.05"/></>,
   inbox: <><path d="M4 5.5h16l1.5 9.5v3.5A1.5 1.5 0 0 1 20 20H4a1.5 1.5 0 0 1-1.5-1.5V15L4 5.5Z"/><path d="M3 15h5l1.5 2h5L16 15h5"/></>,
+  junk: <><path d="M8 3h8l5 5v8l-5 5H8l-5-5V8l5-5Z"/><path d="M12 8v5m0 4h.01"/></>,
   star: <path d="m12 3 2.8 5.67 6.2.9-4.5 4.39 1.06 6.2L12 17.24l-5.56 2.92 1.06-6.2L3 9.57l6.2-.9L12 3Z"/>,
   send: <><path d="m21 3-7.2 18-3.3-7.5L3 10.2 21 3Z"/><path d="M10.5 13.5 21 3"/></>,
   draft: <><path d="M5 3h10l4 4v14H5z"/><path d="M15 3v5h4M8 13h8M8 17h6"/></>,

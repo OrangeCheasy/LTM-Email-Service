@@ -21,6 +21,7 @@ type NativeMessageRow = {
 
 const folderWhere = {
   inbox: "direction = 'inbound' AND is_archived = 0 AND is_deleted = 0",
+  junk: "1 = 0",
   starred: "is_starred = 1 AND is_deleted = 0",
   sent: "direction = 'outbound' AND is_archived = 0 AND is_deleted = 0",
   archive: "is_archived = 1 AND is_deleted = 0",
@@ -53,6 +54,7 @@ function toListItem(row: NativeMessageRow): ProviderMessage {
     isStarred: Boolean(row.is_starred),
     isArchived: Boolean(row.is_archived),
     isDeleted: Boolean(row.is_deleted),
+    isJunk: false,
     hasAttachments: Boolean(row.has_attachments),
     deliveryStatus: row.delivery_status,
     isDraft: false,
