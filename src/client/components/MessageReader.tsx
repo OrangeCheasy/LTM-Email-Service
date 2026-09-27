@@ -9,6 +9,7 @@ import { SenderAvatar } from "./SenderAvatar";
 type MessageReaderProps = {
   message: MessageDetail | null;
   thread: MessageDetail[];
+  folderLabel: string;
   loading?: boolean;
   onBack: () => void;
   onReply: () => void;
@@ -55,7 +56,7 @@ function RichEmailBody({ html }: { html: string }) {
   );
 }
 
-export function MessageReader({ message, thread, loading = false, onBack, onReply, onForward, onPatch }: MessageReaderProps) {
+export function MessageReader({ message, thread, folderLabel, loading = false, onBack, onReply, onForward, onPatch }: MessageReaderProps) {
   const [previewAttachment, setPreviewAttachment] = useState<MessageDetail["attachments"][number] | null>(null);
 
   if (loading && !message) {
@@ -87,14 +88,16 @@ export function MessageReader({ message, thread, loading = false, onBack, onRepl
   return (
     <section className="reader-pane">
       <header className="reader-toolbar">
-        <button className="reader-back" type="button" onClick={onBack}><Icon name="back" size={18}/><span>Inbox</span></button>
+        <button className="reader-back" type="button" onClick={onBack}><Icon name="back" size={18}/><span>{folderLabel}</span></button>
         <div className="reader-title-block">
           <h2>{message.subject || "(no subject)"}</h2>
           <span>{conversation.length > 1 ? `${conversation.length} messages in this conversation` : message.direction === "inbound" ? "Received message" : "Sent message"}</span>
         </div>
         <div className="reader-actions">
           <button className={message.isStarred ? "active-star" : ""} type="button" onClick={() => onPatch({ isStarred: !message.isStarred })} aria-label={message.isStarred ? "Unstar message" : "Star message"}><Icon name="star" size={16}/><span>{message.isStarred ? "Unstar" : "Star"}</span></button>
-          {!message.isDeleted ? (
+          {message.isJunk ? (
+            <button className="mobile-reader-action junk-action" type="button" onClick={() => onPatch({ isJunk: false }, true)} aria-label="Mark as not junk"><Icon name="inbox" size={17}/><span>Not junk</span></button>
+          ) : !message.isDeleted ? (
             <button className="mobile-reader-action" type="button" onClick={() => onPatch({ isArchived: !message.isArchived }, true)} aria-label={message.isArchived ? "Unarchive message" : "Archive message"}><Icon name="archive" size={17}/><span>{message.isArchived ? "Unarchive" : "Archive"}</span></button>
           ) : null}
           <button className="mobile-reader-action" type="button" onClick={onReply} aria-label="Reply to message"><Icon name="reply" size={17}/><span>Reply</span></button>
@@ -160,7 +163,9 @@ export function MessageReader({ message, thread, loading = false, onBack, onRepl
       <footer className="reader-reply-bar">
         <button className="reply-primary" type="button" onClick={onReply}><Icon name="reply" size={17}/>Reply</button>
         <button type="button" onClick={onForward}><Icon name="forward" size={16}/>Forward</button>
-        {!message.isDeleted ? (
+        {message.isJunk ? (
+          <button type="button" onClick={() => onPatch({ isJunk: false }, true)}><Icon name="inbox" size={16}/>Not junk</button>
+        ) : !message.isDeleted ? (
           <button type="button" onClick={() => onPatch({ isArchived: !message.isArchived }, true)}><Icon name="archive" size={16}/>{message.isArchived ? "Unarchive" : "Archive"}</button>
         ) : null}
         {!message.isDeleted ? (

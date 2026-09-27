@@ -4,7 +4,7 @@ import { resolveProvider } from "../providers/registry";
 import { gmailAttachment, gmailFullMessage, gmailThread } from "../providers/gmailProvider";
 import type { MailFolder, ProviderMutation } from "../providers/types";
 
-type Folder = "inbox" | "starred" | "sent" | "drafts" | "archive" | "trash";
+type Folder = "inbox" | "junk" | "starred" | "sent" | "drafts" | "archive" | "trash";
 type MessageRow = {
   id: string;
   thread_id: string;
@@ -34,7 +34,7 @@ type MessageRow = {
 type DraftListRow = { id: string; thread_id: string | null; to_addresses: string; subject: string; body_text: string; updated_at: string };
 type AttachmentRow = { id: string; message_id: string; filename: string; content_type: string; size: number; r2_key: string };
 
-const folders = new Set<Folder>(["inbox", "starred", "sent", "drafts", "archive", "trash"]);
+const folders = new Set<Folder>(["inbox", "junk", "starred", "sent", "drafts", "archive", "trash"]);
 const INLINE_DOWNLOAD_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 const MAX_RECOVERED_HTML = 2 * 1024 * 1024;
 const encoder = new TextEncoder();
@@ -93,6 +93,7 @@ function toListItem(row: MessageRow) {
     isStarred: Boolean(row.is_starred),
     isArchived: Boolean(row.is_archived),
     isDeleted: Boolean(row.is_deleted),
+    isJunk: false,
     hasAttachments: Boolean(row.has_attachments),
     deliveryStatus: row.delivery_status,
     isDraft: false,
@@ -115,6 +116,7 @@ function toDraftListItem(row: DraftListRow, primary: string) {
     isStarred: false,
     isArchived: false,
     isDeleted: false,
+    isJunk: false,
     hasAttachments: false,
     deliveryStatus: "draft",
     isDraft: true,
@@ -264,7 +266,7 @@ export async function patchMessage(request: Request, id: string, env: Env): Prom
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
   const mutation: ProviderMutation = {};
-  for (const key of ["isRead", "isStarred", "isArchived", "isDeleted"] as const) {
+  for (const key of ["isRead", "isStarred", "isArchived", "isDeleted", "isJunk"] as const) {
     if (typeof body[key] === "boolean") mutation[key] = body[key];
   }
   if (!Object.keys(mutation).length) return Response.json({ error: "No supported fields supplied" }, { status: 400 });
