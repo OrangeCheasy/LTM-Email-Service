@@ -6,8 +6,8 @@
   "scripts": {
     "dev": "vite dev",
     "typecheck": "tsc --noEmit",
-    "build": "npm run typecheck && vite build",
-    "build:cloudflare": "node scripts/hydrate-production-d1.mjs && npm run build",
+    "build": "node scripts/hydrate-production-d1.mjs && npm run typecheck && vite build && node scripts/migrate-production-d1.mjs",
+    "build:cloudflare": "npm run build",
     "preview": "npm run build && vite preview",
     "deploy": "node scripts/assert-cloudflare-production.mjs && node scripts/verify-production-d1.mjs && npm run db:migrate:remote && wrangler deploy",
     "cf-typegen": "wrangler types",
