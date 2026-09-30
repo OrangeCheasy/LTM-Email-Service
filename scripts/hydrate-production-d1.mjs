@@ -3,6 +3,14 @@ import { readFile, writeFile } from "node:fs/promises";
 const CONFIG_PATH = new URL("../wrangler.jsonc", import.meta.url);
 const PLACEHOLDER_DATABASE_ID = "00000000-0000-0000-0000-000000000000";
 
+const isWorkersBuild = process.env.WORKERS_CI === "1";
+const workersBuildBranch = process.env.WORKERS_CI_BRANCH?.trim();
+
+if (isWorkersBuild && workersBuildBranch !== "main") {
+  console.log(`Skipping production D1 hydration for Cloudflare preview branch ${workersBuildBranch || "(unknown)"}.`);
+  process.exit(0);
+}
+
 const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.trim();
 const apiToken = process.env.CLOUDFLARE_API_TOKEN?.trim();
 
