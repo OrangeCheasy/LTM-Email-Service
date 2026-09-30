@@ -6,8 +6,12 @@ const PLACEHOLDER_DATABASE_ID = "00000000-0000-0000-0000-000000000000";
 const isWorkersBuild = process.env.WORKERS_CI === "1";
 const workersBuildBranch = process.env.WORKERS_CI_BRANCH?.trim();
 
-if (isWorkersBuild && workersBuildBranch !== "main") {
-  console.log(`Skipping production D1 hydration for Cloudflare preview branch ${workersBuildBranch || "(unknown)"}.`);
+if (!isWorkersBuild || workersBuildBranch !== "main") {
+  console.log(
+    isWorkersBuild
+      ? `Skipping production D1 hydration for Cloudflare preview branch ${workersBuildBranch || "(unknown)"}.`
+      : "Skipping production D1 hydration outside a Cloudflare Workers Build on main.",
+  );
   process.exit(0);
 }
 

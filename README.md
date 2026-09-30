@@ -88,14 +88,14 @@ This repository reflects the source for a private production service. Runtime in
 
 GitHub Actions run validation and full-history security checks only for pushes to version branches (`vX.XX`) and pull requests targeting those branches. They do not run on `main`.
 
-Cloudflare Workers Builds is the only production deployment path. Configure its production trigger with:
+Cloudflare Workers Builds is the only production deployment path. Its current `npm run build` and `npx wrangler deploy` commands are supported. The build hydrates the production D1 ID and applies remote migrations only for a Cloudflare production build on `main`. Recommended commands, with an additional deploy preflight, are:
 
 - Build command: `npm run build:cloudflare`
 - Deploy command: `npm run deploy`
 - Production branch: `main`
 - Build variables/secrets: `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` (secret)
 
-The Cloudflare build command resolves the production D1 binding from the deployed Worker before building, so the database ID stays out of source control. On preview branches, production binding hydration is skipped. The deploy command refuses to run outside Cloudflare Workers Builds on `main`, verifies the generated config, applies D1 migrations, and deploys the Worker. Give the API token Workers Scripts read/edit and D1 edit access. Keep the preview command set to `npx wrangler preview`.
+The build resolves the production D1 binding from the deployed Worker before bundling, so the database ID stays out of source control. On preview branches, production binding hydration and migrations are skipped. The `npm run deploy` command refuses to run outside Cloudflare Workers Builds on `main`, verifies the generated config, applies D1 migrations, and deploys the Worker. Give the API token Workers Scripts read/edit and D1 edit access. Keep the preview command set to `npx wrangler preview`.
 
 ## Security reports
 
