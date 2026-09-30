@@ -21,7 +21,8 @@ LTM Email Service is a full-stack webmail application built around a private mai
 - **WebAuthn / passkeys** — application authentication with server-side session state
 - **Gmail API** — optional connected Gmail inboxes and sending accounts
 - **Web Push / VAPID** — browser push notifications
-- **GitHub Actions + Wrangler** — validation and controlled production deployment
+- **GitHub Actions** — validation and security checks on version branches
+- **Cloudflare Workers Builds + Wrangler** — production deployment from `main`
 
 ## Implemented features
 
@@ -78,16 +79,23 @@ src/worker/providers/       native/Gmail provider abstraction and OAuth helpers
 migrations/                 D1 schema migrations
 public/                     PWA/static assets
 scripts/                    build/asset and deployment helper scripts
-.github/workflows/          validation, security scanning, and production deployment
+.github/workflows/          version-branch validation and security scanning
 ```
 
 ## Development and deployment
 
 This repository reflects the source for a private production service. Runtime infrastructure, account configuration, credentials, and production-only values are managed separately from source control.
 
-Development validation includes dependency installation, generated-asset validation, TypeScript checks, a production build, and a full-history security audit. The security audit fetches repository branches/tags before scanning so stale refs are included rather than checking only the current working branch. It checks both secret patterns and sensitive historical artifact paths such as environment files, mailbox exports, local databases, key files, and backups.
+GitHub Actions run validation and full-history security checks only for pushes to version branches (`vX.XX`) and pull requests targeting those branches. They do not run on `main`.
 
-Production deployment is intentionally isolated from ordinary development branches. Before migrations or deployment, the workflow authenticates to Cloudflare, reads the currently deployed Worker's D1 binding, and hydrates the local deployment config only inside the ephemeral CI workspace.
+Cloudflare Workers Builds is the only production deployment path. Configure its production trigger with:
+
+- Build command: `npm run build:cloudflare`
+- Deploy command: `npm run deploy`
+- Production branch: `main`
+- Build variables/secrets: `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` (secret)
+
+The Cloudflare build command resolves the production D1 binding from the deployed Worker before building, so the database ID stays out of source control. On preview branches, production binding hydration is skipped. The deploy command refuses to run outside Cloudflare Workers Builds on `main`, verifies the generated config, applies D1 migrations, and deploys the Worker. Give the API token Workers Scripts read/edit and D1 edit access. Keep the preview command set to `npx wrangler preview`.
 
 ## Security reports
 
